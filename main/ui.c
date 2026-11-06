@@ -618,7 +618,7 @@ void ui_update(const air_sample_t *s)
                 const char *rot = (mini[i] == AIR_TEMP) ? T(STR_LBL_TEMP)
                                 : (mini[i] == AIR_HUM)  ? T(STR_LBL_HUM)
                                                         : i18n_metric(mini[i]);
-                snprintf(buf, sizeof(buf), \"%s %s\", rot, air_metric_unit_ui(mini[i]));
+                snprintf(buf, sizeof(buf), "%s %s", rot, air_metric_unit_ui(mini[i]));
                 lv_label_set_text(s_sum_name[i], buf);
                 fmt_value(buf2, sizeof(buf2), mini[i], s->v[mini[i]]);
                 lv_label_set_text(s_sum_val[i], buf2);
@@ -676,10 +676,10 @@ void ui_update(const air_sample_t *s)
             break;
         case PAGE_CLIMATE: {
             fmt_value(buf2, sizeof(buf2), AIR_TEMP, s->v[AIR_TEMP]);
-            snprintf(buf, sizeof(buf), \"%s C\", buf2);
+            snprintf(buf, sizeof(buf), "%s C", buf2);
             lv_label_set_text(s_cl_temp, buf);
             fmt_value(buf2, sizeof(buf2), AIR_HUM, s->v[AIR_HUM]);
-            snprintf(buf, sizeof(buf), \"%s %%\", buf2);
+            snprintf(buf, sizeof(buf), "%s %%", buf2);
             lv_label_set_text(s_cl_hum, buf);
             chart_refresh_axis(s_cl_chart, s_cl_ser, AIR_TEMP, LV_CHART_AXIS_PRIMARY_Y);
             chart_refresh_axis(s_cl_chart, s_cl_ser_hum, AIR_HUM, LV_CHART_AXIS_SECONDARY_Y);
@@ -694,21 +694,21 @@ void ui_set_status(const char *time_str, bool wifi, bool mqtt, const char *msg,
                    int bat_pct, bool charging)
 {
     if (!s_status_time) return;
-    lv_label_set_text(s_status_time, time_str ? time_str : \"\");
+    lv_label_set_text(s_status_time, time_str ? time_str : "");
 
     char net[32];
-    snprintf(net, sizeof(net), \"%s%s%s\",
-             wifi ? \"wifi\" : T(STR_NO_WIFI),
-             (wifi && mqtt) ? \" + \" : \"\",
-             (wifi && mqtt) ? \"mqtt\" : \"\");
+    snprintf(net, sizeof(net), "%s%s%s",
+             wifi ? "wifi" : T(STR_NO_WIFI),
+             (wifi && mqtt) ? " + " : "",
+             (wifi && mqtt) ? "mqtt" : "");
     lv_label_set_text(s_status_net, net);
     lv_obj_set_style_text_color(s_status_net, col(wifi ? (mqtt ? 0x22c55e : 0x94a3b8)
                                                       : 0x64748b), 0);
 
-    lv_label_set_text(s_status_msg, msg ? msg : \"\");
+    lv_label_set_text(s_status_msg, msg ? msg : "");
 
     if (bat_pct < 0) {
-        lv_label_set_text(s_status_bat, \"\");
+        lv_label_set_text(s_status_bat, "");
     } else {
         // Die Akkusymbole stammen direkt aus den Schriften von LVGL (Symbols)
         const char *icono = charging      ? LV_SYMBOL_CHARGE
@@ -718,7 +718,7 @@ void ui_set_status(const char *time_str, bool wifi, bool mqtt, const char *msg,
                           : bat_pct >= 12 ? LV_SYMBOL_BATTERY_1
                                           : LV_SYMBOL_BATTERY_EMPTY;
         char buf[24];
-        snprintf(buf, sizeof(buf), \"%s %d%%\", icono, bat_pct);
+        snprintf(buf, sizeof(buf), "%s %d%%", icono, bat_pct);
         lv_label_set_text(s_status_bat, buf);
         const uint32_t color = charging     ? 0x22c55e
                              : bat_pct < 12 ? 0xef4444
@@ -773,7 +773,7 @@ void ui_wake(void)
 void ui_set_ip(const char *ip)
 {
     if (!s_idle_ip) return;
-    lv_label_set_text(s_idle_ip, (ip && ip[0]) ? ip : \"\");
+    lv_label_set_text(s_idle_ip, (ip && ip[0]) ? ip : "");
 }
 
 void ui_tick_1s(void)
