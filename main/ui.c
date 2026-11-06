@@ -365,20 +365,20 @@ static void build_gas(lv_obj_t *tile)
 
 static void build_climate(lv_obj_t *tile)
 {
-    // Spaltenkoepfe in Kurvenfarbe, aufgeteilt nach links (-108) und rechts (+108)
-    lv_obj_t *lbl_temp = make_label(tile, &ui_font_22, 0xf59e0b);
+    // Spaltenkoepfe in 28 px Kurvenfarbe, weiter nach aussen gesetzt (-116 / +116)
+    lv_obj_t *lbl_temp = make_label(tile, &ui_font_28, 0xf59e0b);
     lv_label_set_text(lbl_temp, i18n_metric(AIR_TEMP));
-    lv_obj_align(lbl_temp, LV_ALIGN_CENTER, -108 + UI_X_OFFSET, -66);
+    lv_obj_align(lbl_temp, LV_ALIGN_CENTER, -116 + UI_X_OFFSET, -72);
 
     s_cl_temp = make_label(tile, &ui_font_48, 0xf59e0b);
-    lv_obj_align(s_cl_temp, LV_ALIGN_CENTER, -108 + UI_X_OFFSET, -22);
+    lv_obj_align(s_cl_temp, LV_ALIGN_CENTER, -116 + UI_X_OFFSET, -22);
 
-    lv_obj_t *lbl_hum = make_label(tile, &ui_font_22, 0x38bdf8);
+    lv_obj_t *lbl_hum = make_label(tile, &ui_font_28, 0x38bdf8);
     lv_label_set_text(lbl_hum, i18n_metric(AIR_HUM));
-    lv_obj_align(lbl_hum, LV_ALIGN_CENTER, 108 + UI_X_OFFSET, -66);
+    lv_obj_align(lbl_hum, LV_ALIGN_CENTER, 116 + UI_X_OFFSET, -72);
 
     s_cl_hum = make_label(tile, &ui_font_48, 0x38bdf8);
-    lv_obj_align(s_cl_hum, LV_ALIGN_CENTER, 108 + UI_X_OFFSET, -22);
+    lv_obj_align(s_cl_hum, LV_ALIGN_CENTER, 116 + UI_X_OFFSET, -22);
 
     // Ohne Ring kann diese Seite ein breites Diagramm nutzen. Beide Kurven teilen sich
     // das Diagramm, nutzen aber getrennte vertikale Skalen (Primaer- und Sekundaerachse).
