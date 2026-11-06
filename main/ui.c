@@ -258,16 +258,16 @@ static void build_summary(lv_obj_t *tile)
     lv_obj_set_style_arc_width(s_g_summary.arc, 22, LV_PART_INDICATOR);
 
     s_sum_center = make_label(tile, &ui_font_28, 0xffffff);
-    lv_obj_align(s_sum_center, LV_ALIGN_CENTER, UI_X_OFFSET, -66);
+    lv_obj_align(s_sum_center, LV_ALIGN_CENTER, UI_X_OFFSET, -70);
     s_sum_sub = make_label(tile, &ui_font_22, 0x94a3b8);
-    lv_obj_align(s_sum_sub, LV_ALIGN_CENTER, UI_X_OFFSET, -30);
+    lv_obj_align(s_sum_sub, LV_ALIGN_CENTER, UI_X_OFFSET, -34);
 
-    // Rejilla 2x2 de secundarios mit grosszuegigem Abstand
-    static const int dx[4] = {-86, 86, -86, 86};
-    static const int dy[4] = {14, 14, 76, 76};
+    // Rejilla 2x2 de secundarios mit vergroessertem Padding und 28px-Werten
+    static const int dx[4] = {-92, 92, -92, 92};
+    static const int dy[4] = {16, 16, 84, 84};
     for (int i = 0; i < 4; i++) {
         mini_create(tile, &s_sum_name[i], &s_sum_val[i], dx[i], dy[i],
-                    &ui_font_22);
+                    &ui_font_28);
     }
 }
 
@@ -278,15 +278,16 @@ static void build_co2(lv_obj_t *tile)
     // anillo la tapa donde la cruza, asi que la linea parece pasar por debajo
     // y salir por los dos bordes.
     chart_create(&s_co2_chart, &s_co2_ser, tile, 430, 90, 0x38bdf8);
-    lv_obj_align(s_co2_chart, LV_ALIGN_CENTER, UI_X_OFFSET, 100);
+    lv_obj_align(s_co2_chart, LV_ALIGN_CENTER, UI_X_OFFSET, 108);
 
     gauge_create(&s_g_co2, tile, RING_D, 22,
                  &ui_font_48, &ui_font_22);
-    lv_obj_align(s_g_co2.value, LV_ALIGN_CENTER, UI_X_OFFSET, -44);
-    lv_obj_align(s_g_co2.caption, LV_ALIGN_CENTER, UI_X_OFFSET, -96);
+    lv_obj_set_style_text_font(s_g_co2.caption, &ui_font_28, 0);
+    lv_obj_align(s_g_co2.caption, LV_ALIGN_CENTER, UI_X_OFFSET, -78);
+    lv_obj_align(s_g_co2.value, LV_ALIGN_CENTER, UI_X_OFFSET, -22);
 
     s_co2_level = make_label(tile, &ui_font_28, 0xffffff);
-    lv_obj_align(s_co2_level, LV_ALIGN_CENTER, UI_X_OFFSET, 30);
+    lv_obj_align(s_co2_level, LV_ALIGN_CENTER, UI_X_OFFSET, 48);
 }
 
 // Turquesa: los otros colores de serie ya estan cogidos (CO2 azul, VOC
@@ -299,7 +300,7 @@ static void build_pm(lv_obj_t *tile)
     // Solo la PM2.5: es la que manda en esta pagina y la que importa para
     // salud; cuatro curvas casi identicas no dirian nada.
     chart_create(&s_pm_chart, &s_pm_ser, tile, 430, 90, PM_COL);
-    lv_obj_align(s_pm_chart, LV_ALIGN_CENTER, UI_X_OFFSET, 100);
+    lv_obj_align(s_pm_chart, LV_ALIGN_CENTER, UI_X_OFFSET, 108);
 
     // Misma gramatica visual que el CO2: anillo y cifra grande. Antes eran
     // cuatro barras identicas en letra de 16 px, sin jerarquia y dejando
@@ -307,16 +308,17 @@ static void build_pm(lv_obj_t *tile)
     // que se lleva el centro y las otras tres acompanan.
     gauge_create(&s_g_pm, tile, RING_D, 22,
                  &ui_font_48, &ui_font_22);
-    lv_obj_align(s_g_pm.value, LV_ALIGN_CENTER, UI_X_OFFSET, -48);
-    lv_obj_align(s_g_pm.caption, LV_ALIGN_CENTER, UI_X_OFFSET, -100);
+    lv_obj_set_style_text_font(s_g_pm.caption, &ui_font_28, 0);
+    lv_obj_align(s_g_pm.caption, LV_ALIGN_CENTER, UI_X_OFFSET, -82);
+    lv_obj_align(s_g_pm.value, LV_ALIGN_CENTER, UI_X_OFFSET, -26);
 
     s_pm_level = make_label(tile, &ui_font_28, 0xffffff);
-    lv_obj_align(s_pm_level, LV_ALIGN_CENTER, UI_X_OFFSET, 26);
+    lv_obj_align(s_pm_level, LV_ALIGN_CENTER, UI_X_OFFSET, 44);
 
-    static const int dx[3] = {-106, 0, 106};
+    static const int dx[3] = {-108, 0, 108};
     for (int i = 0; i < 3; i++) {
-        mini_create(tile, &s_pm_name[i], &s_pm_val[i], dx[i], 70,
-                    &ui_font_22);
+        mini_create(tile, &s_pm_name[i], &s_pm_val[i], dx[i], 76,
+                    &ui_font_28);
         // Las tres cifras caen DENTRO de la banda de la grafica (+55..+145),
         // asi que sin esto la curva las tacharia. Fondo opaco del color de la
         // pantalla y la linea pasa por detras y asoma por los huecos, igual
@@ -379,21 +381,26 @@ static void build_gas(lv_obj_t *tile)
 
 static void build_climate(lv_obj_t *tile)
 {
-    lv_obj_t *title = make_label(tile, &ui_font_22, 0x94a3b8);
+    lv_obj_t *title = make_label(tile, &ui_font_28, 0x94a3b8);
     lv_label_set_text(title, T(STR_PAGE_CLIMATE));
-    lv_obj_align(title, LV_ALIGN_CENTER, UI_X_OFFSET, -100);
+    lv_obj_align(title, LV_ALIGN_CENTER, UI_X_OFFSET, -78);
 
+    // Las dos cifras al mismo tamano: la humedad tambien es un dato, no un
+    // pie de foto. Cada una del color de su curva, que asi la grafica se
+    // explica sola y no hace falta leyenda.
+    // Lado a lado en vez de apiladas: deja sitio abajo para que la curva
+    // ocupe todo el ancho, que es el efecto que se buscaba.
     s_cl_temp = make_label(tile, &ui_font_48, 0xf59e0b);
-    lv_obj_align(s_cl_temp, LV_ALIGN_CENTER, -96 + UI_X_OFFSET, -40);
+    lv_obj_align(s_cl_temp, LV_ALIGN_CENTER, -96 + UI_X_OFFSET, -16);
     s_cl_hum = make_label(tile, &ui_font_48, 0x38bdf8);
-    lv_obj_align(s_cl_hum, LV_ALIGN_CENTER, 96 + UI_X_OFFSET, -40);
+    lv_obj_align(s_cl_hum, LV_ALIGN_CENTER, 96 + UI_X_OFFSET, -16);
 
     // Sin anillo esta pagina puede permitirse una grafica ancha. Las dos
     // curvas comparten dibujo pero no escala: la humedad va al eje secundario
     // porque se mueve por el 50 % y la temperatura por los 25 grados.
     chart_create(&s_cl_chart, &s_cl_ser, tile, 430, 110, 0xf59e0b);
     s_cl_ser_hum = chart_add_secondary(s_cl_chart, 0x38bdf8);
-    lv_obj_align(s_cl_chart, LV_ALIGN_CENTER, 0, 70);
+    lv_obj_align(s_cl_chart, LV_ALIGN_CENTER, UI_X_OFFSET, 86);
 }
 
 // ------------------------------------------------------------------ estado
@@ -467,8 +474,8 @@ static void build_chrome(lv_obj_t *scr)
 {
     // Hora y estado de red DENTRO del anillo, no encima: es lo que permite
     // que el arco crezca hasta el borde sin que el texto caiga sobre el color.
-    s_status_time = make_label(scr, &ui_font_22, 0xe2e8f0);
-    lv_obj_align(s_status_time, LV_ALIGN_CENTER, UI_X_OFFSET, -164);
+    s_status_time = make_label(scr, &ui_font_28, 0xe2e8f0);
+    lv_obj_align(s_status_time, LV_ALIGN_CENTER, UI_X_OFFSET, -166);
 
     s_status_net = make_label(scr, &ui_font_16, 0x475569);
     lv_obj_align(s_status_net, LV_ALIGN_CENTER, UI_X_OFFSET, -134);
