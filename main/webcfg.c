@@ -195,7 +195,7 @@ static const char k_page[] =
 "const M={co2:['CO2','ppm'],pm25:['PM2.5','ug/m3'],pm10:['PM10','ug/m3'],\n"
 "pm1:['PM1.0','ug/m3'],pm4:['PM4.0','ug/m3'],temperature:['Temperatur','°C'],\n"
 "humidity:['Feuchte','%'],voc:['VOC',''],nox:['NOx',''],noise:['Lärm','dB']};\n"
-"const NIV={good:'Gut',fair:'Mäßig',moderate:'Mittel',poor:'Schlecht',bad:'Sehr schlecht'};\n"
+"const NIV={good:'Gut',fair:'Mäßig',moderate:'Mittel',poor:'Schlecht',bad:'Sehr schlecht',BUENO:'Gut',ACEPTABLE:'Mäßig',REGULAR:'Mittel',MALO:'Schlecht','MUY MALO':'Sehr schlecht'};\n"
 "function vivo(e){\n"
 " const s={brightness:'bv',night_brightness:'nv',alarm_volume:'av'}[e.name];\n"
 " if(s)document.getElementById(s).textContent=e.value;\n"
