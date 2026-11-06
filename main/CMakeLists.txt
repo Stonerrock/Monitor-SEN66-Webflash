@@ -25,6 +25,8 @@ idf_component_register(
         "."
     PRIV_REQUIRES
         driver
+        esp_driver_i2s
+        esp_driver_gpio
         esp_lcd
         esp_timer
         esp_wifi
@@ -33,8 +35,9 @@ idf_component_register(
         esp_app_format
         app_update
         mqtt
-        json
+        espressif__cjson
         nvs_flash
+        lvgl__lvgl
 )
 
 # LVGL genera/espera el include condicional estandar; en ESP-IDF el header es
