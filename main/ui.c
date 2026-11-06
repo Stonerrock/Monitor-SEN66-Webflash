@@ -138,13 +138,10 @@ static void gauge_create(gauge_t *g, lv_obj_t *parent, int size, int thickness,
     lv_obj_remove_style(g->arc, NULL, LV_PART_KNOB);
     lv_obj_remove_flag(g->arc, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_arc_width(g->arc, thickness, LV_PART_MAIN);
-    // El indicador, mas fino que la pista: asi un valor pequeno se lee como
-    // el arranque de un relleno dentro de una ranura y no como un pegote
-    // suelto, que es lo que pasaba con ambos al mismo grosor.
-    lv_obj_set_style_arc_width(g->arc, thickness > 16 ? thickness - 8 : thickness - 4,
-                               LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(g->arc, thickness, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(g->arc, col(0x1e293b), LV_PART_MAIN);
     lv_obj_set_style_arc_color(g->arc, col(0x22c55e), LV_PART_INDICATOR);
+    lv_obj_set_style_arc_rounded(g->arc, true, LV_PART_MAIN);
     lv_obj_set_style_arc_rounded(g->arc, true, LV_PART_INDICATOR);
 
     g->value = make_label(parent, font_value, 0xffffff);
