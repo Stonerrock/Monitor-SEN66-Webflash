@@ -39,10 +39,34 @@ static void retry_connect_cb(void *arg)
     esp_wifi_connect();
 }
 
+static const char *wifi_reason_to_str(uint8_t reason)
+{
+    switch (reason) {
+    case WIFI_REASON_AUTH_EXPIRE:
+        return "Authentifizierung abgelaufen";
+    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+        return "4-Wege-Handshake Timeout (Passwort pruefen)";
+    case WIFI_REASON_NO_AP_FOUND:
+        return "WLAN nicht gefunden (SSID/Kanal/2.4 GHz pruefen)";
+    case WIFI_REASON_AUTH_FAIL:
+        return "Authentifizierung fehlgeschlagen (WPA/WPA3 pruefen)";
+    case WIFI_REASON_ASSOC_FAIL:
+        return "Assoziierung fehlgeschlagen";
+    case WIFI_REASON_HANDSHAKE_TIMEOUT:
+        return "Handshake Timeout";
+    case WIFI_REASON_CONNECTION_FAIL:
+        return "Verbindungsaufbau fehlgeschlagen";
+    case WIFI_REASON_BEACON_TIMEOUT:
+        return "AP-Signal verloren (Beacon Timeout)";
+    default:
+        return "Anderer Grund";
+    }
+}
+
 static void on_time_sync(struct timeval *tv)
 {
     (void)tv;
-    ESP_LOGI(TAG, "hora sincronizada por SNTP");
+    ESP_LOGI(TAG, "Uhrzeit ueber SNTP synchronisiert");
     if (s_time_cb) s_time_cb();
 }
 
@@ -58,20 +82,23 @@ static void start_sntp(void)
 
 static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
-    (void)arg; (void)data;
+    (void)arg;
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         s_state = NET_CONNECTING;
         esp_wifi_connect();
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        const wifi_event_sta_disconnected_t *ev = (const wifi_event_sta_disconnected_t *)data;
+        if (ev != NULL) {
+            ESP_LOGW(TAG, "WLAN getrennt (Grund %u: %s)",
+                     (unsigned int)ev->reason, wifi_reason_to_str(ev->reason));
+        }
         s_ip[0] = '\0';
         s_state = s_portal_up ? NET_PORTAL : NET_CONNECTING;
         if (++s_fails == FAILS_BEFORE_PORTAL && !s_portal_up) {
-            ESP_LOGW(TAG, "%d fallos seguidos: abro el portal de configuracion", s_fails);
+            ESP_LOGW(TAG, "%d Fehlversuche in Folge: Konfigurationsportal wird geoeffnet", s_fails);
             start_portal();
         }
-        // Espera creciente hasta 10 s para no machacar el router ni la radio.
-        // Con un temporizador y NO con vTaskDelay: esto corre en la tarea del
-        // bucle de eventos, y dormirla retrasaria el GOT_IP y los eventos MQTT.
+        // Exponentielles Backoff bis max. 10 s
         int wait_ms = 500 * (s_fails < 20 ? s_fails : 20);
         if (wait_ms > 10000) wait_ms = 10000;
         esp_timer_stop(s_retry_timer);
@@ -81,7 +108,7 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         snprintf(s_ip, sizeof(s_ip), IPSTR, IP2STR(&e->ip_info.ip));
         s_fails = 0;
         s_state = NET_CONNECTED;
-        ESP_LOGI(TAG, "conectado, IP %s", s_ip);
+        ESP_LOGI(TAG, "Verbunden, IP: %s", s_ip);
         start_sntp();
     }
 }
@@ -144,12 +171,12 @@ static void start_portal(void)
     // en AP, asi que la radio no llegaba a arrancar y no habia portal.
     const esp_err_t err = esp_wifi_start();
     if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
-        ESP_LOGW(TAG, "esp_wifi_start en el portal: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG, "esp_wifi_start im Portal fehlgeschlagen: %s", esp_err_to_name(err));
     }
 
     s_portal_up = true;
     if (s_state != NET_CONNECTED) s_state = NET_PORTAL;
-    ESP_LOGW(TAG, "portal de configuracion abierto: red '%s' -> http://192.168.4.1",
+    ESP_LOGI(TAG, "Konfigurationsportal geoeffnet: WLAN '%s' -> http://192.168.4.1",
              s_ap_ssid);
 }
 
@@ -158,8 +185,8 @@ esp_err_t net_start(void)
     const settings_t *cfg = settings_get();
 
     if (cfg->wifi_ssid[0] == '\0') {
-        ESP_LOGW(TAG, "sin red configurada");
-        start_portal(); // pone el modo y arranca la radio
+        ESP_LOGW(TAG, "Kein WLAN konfiguriert");
+        start_portal(); // startet AP-Modus
         return ESP_OK;
     }
 
@@ -176,7 +203,7 @@ esp_err_t net_start(void)
     // este aparato vive enchufado.
     esp_wifi_set_ps(WIFI_PS_NONE);
     ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "start");
-    ESP_LOGI(TAG, "conectando a '%s'", cfg->wifi_ssid);
+    ESP_LOGI(TAG, "Verbinde mit '%s'...", cfg->wifi_ssid);
     return ESP_OK;
 }
 
@@ -195,7 +222,7 @@ int net_rssi(void)
 void net_set_power_save(bool enabled)
 {
     esp_wifi_set_ps(enabled ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
-    ESP_LOGI(TAG, "ahorro de radio %s", enabled ? "activado" : "desactivado");
+    ESP_LOGI(TAG, "WLAN-Stromsparmodus %s", enabled ? "aktiviert" : "deaktiviert");
 }
 
 void net_set_time_sync_cb(void (*cb)(void)) { s_time_cb = cb; }
