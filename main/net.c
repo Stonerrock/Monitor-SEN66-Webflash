@@ -167,6 +167,8 @@ esp_err_t net_start(void)
     strlcpy((char *)sta.sta.ssid, cfg->wifi_ssid, sizeof(sta.sta.ssid));
     strlcpy((char *)sta.sta.password, cfg->wifi_pass, sizeof(sta.sta.password));
     sta.sta.threshold.authmode = cfg->wifi_pass[0] ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
+    sta.sta.pmf_cfg.capable = true;
+    sta.sta.pmf_cfg.required = false;
 
     ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_STA), TAG, "modo sta");
     ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_STA, &sta), TAG, "config sta");
