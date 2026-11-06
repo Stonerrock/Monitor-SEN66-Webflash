@@ -117,12 +117,12 @@ static lv_obj_t *make_label(lv_obj_t *parent, const lv_font_t *font, uint32_t co
 static void mini_create(lv_obj_t *parent, lv_obj_t **name, lv_obj_t **value,
                         int dx, int dy, const lv_font_t *font_value)
 {
-    *name = make_label(parent, &ui_font_16, 0x64748b);
+    *name = make_label(parent, &ui_font_22, 0x64748b);
     lv_obj_set_style_text_align(*name, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(*name, LV_ALIGN_CENTER, dx + UI_X_OFFSET, dy);
     *value = make_label(parent, font_value, 0xffffff);
     lv_obj_set_style_text_align(*value, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(*value, LV_ALIGN_CENTER, dx + UI_X_OFFSET, dy + 22);
+    lv_obj_align(*value, LV_ALIGN_CENTER, dx + UI_X_OFFSET, dy + 26);
 }
 
 static void gauge_create(gauge_t *g, lv_obj_t *parent, int size, int thickness,
@@ -245,7 +245,7 @@ static void chart_refresh(lv_obj_t *chart, lv_chart_series_t *ser, air_metric_t 
 static void build_summary(lv_obj_t *tile)
 {
     gauge_create(&s_g_summary, tile, RING_D, 22,
-                 &ui_font_28, &ui_font_22);
+                 &ui_font_48, &ui_font_28);
     // In der Uebersicht steht im Zentrum Text, keine Zahl
     lv_obj_add_flag(s_g_summary.value, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_g_summary.unit, LV_OBJ_FLAG_HIDDEN);
@@ -254,14 +254,14 @@ static void build_summary(lv_obj_t *tile)
     // Gleiche Dicke fuer Anzeige und Spur, damit kein Rand hervorblitzt.
     lv_obj_set_style_arc_width(s_g_summary.arc, 22, LV_PART_INDICATOR);
 
-    s_sum_center = make_label(tile, &ui_font_28, 0xffffff);
-    lv_obj_align(s_sum_center, LV_ALIGN_CENTER, UI_X_OFFSET, -70);
-    s_sum_sub = make_label(tile, &ui_font_22, 0x94a3b8);
-    lv_obj_align(s_sum_sub, LV_ALIGN_CENTER, UI_X_OFFSET, -34);
+    s_sum_center = make_label(tile, &ui_font_48, 0xffffff);
+    lv_obj_align(s_sum_center, LV_ALIGN_CENTER, UI_X_OFFSET, -76);
+    s_sum_sub = make_label(tile, &ui_font_28, 0x94a3b8);
+    lv_obj_align(s_sum_sub, LV_ALIGN_CENTER, UI_X_OFFSET, -32);
 
     // 2x2-Raster von Sekundaerwerten mit vergroessertem Padding und 28px-Werten
-    static const int dx[4] = {-92, 92, -92, 92};
-    static const int dy[4] = {16, 16, 84, 84};
+    static const int dx[4] = {-96, 96, -96, 96};
+    static const int dy[4] = {18, 18, 86, 86};
     for (int i = 0; i < 4; i++) {
         mini_create(tile, &s_sum_name[i], &s_sum_val[i], dx[i], dy[i],
                     &ui_font_28);
@@ -277,7 +277,7 @@ static void build_co2(lv_obj_t *tile)
     lv_obj_align(s_co2_chart, LV_ALIGN_CENTER, UI_X_OFFSET, 108);
 
     gauge_create(&s_g_co2, tile, RING_D, 22,
-                 &ui_font_48, &ui_font_22);
+                 &ui_font_48, &ui_font_28);
     lv_obj_set_style_text_font(s_g_co2.caption, &ui_font_28, 0);
     lv_obj_align(s_g_co2.caption, LV_ALIGN_CENTER, UI_X_OFFSET, -78);
     lv_obj_align(s_g_co2.value, LV_ALIGN_CENTER, UI_X_OFFSET, -22);
@@ -299,7 +299,7 @@ static void build_pm(lv_obj_t *tile)
     // Gleicher visueller Aufbau wie CO2: Ring und grosse Ziffer.
     // PM2.5 steht im Fokus, die anderen drei Werte begleiten darunter.
     gauge_create(&s_g_pm, tile, RING_D, 22,
-                 &ui_font_48, &ui_font_22);
+                 &ui_font_48, &ui_font_28);
     lv_obj_set_style_text_font(s_g_pm.caption, &ui_font_28, 0);
     lv_obj_align(s_g_pm.caption, LV_ALIGN_CENTER, UI_X_OFFSET, -82);
     lv_obj_align(s_g_pm.value, LV_ALIGN_CENTER, UI_X_OFFSET, -26);
@@ -307,7 +307,7 @@ static void build_pm(lv_obj_t *tile)
     s_pm_level = make_label(tile, &ui_font_28, 0xffffff);
     lv_obj_align(s_pm_level, LV_ALIGN_CENTER, UI_X_OFFSET, 44);
 
-    static const int dx[3] = {-108, 0, 108};
+    static const int dx[3] = {-114, 0, 114};
     for (int i = 0; i < 3; i++) {
         mini_create(tile, &s_pm_name[i], &s_pm_val[i], dx[i], 76,
                     &ui_font_28);
@@ -332,35 +332,30 @@ static void build_gas(lv_obj_t *tile)
     // VOC auf Primaerachse, NOx auf Sekundaerachse (gleiches Diagramm, getrennte Skalierung).
     chart_create(&s_gas_chart, &s_gas_ser_voc, tile, 430, 90, GAS_COL_VOC);
     s_gas_ser_nox = chart_add_secondary(s_gas_chart, GAS_COL_NOX);
-    lv_obj_align(s_gas_chart, LV_ALIGN_CENTER, 0, 100);
+    lv_obj_align(s_gas_chart, LV_ALIGN_CENTER, UI_X_OFFSET, 108);
 
-    lv_obj_t *title = make_label(tile, &ui_font_16, 0x94a3b8);
+    lv_obj_t *title = make_label(tile, &ui_font_28, 0x94a3b8);
     lv_label_set_text(title, T(STR_PAGE_GASES));
-    lv_obj_align(title, LV_ALIGN_CENTER, 0, -96);
+    lv_obj_align(title, LV_ALIGN_CENTER, UI_X_OFFSET, -88);
 
-    // Dos esferas de 168 centradas en x=+-88: la esquina exterior queda a 194
-    // px del centro de pantalla, dentro de los ~199 utiles. Con 176 se salian.
+    // Zwei vergroesserte Ringe (188 px), nach links und rechts gespreizt (x = +-106)
     lv_obj_t *left = plain(tile);
-    lv_obj_set_size(left, 180, 180);
-    lv_obj_align(left, LV_ALIGN_CENTER, -94 + UI_X_OFFSET, 14);
-    gauge_create(&s_g_voc, left, 172, 16, &ui_font_48, &ui_font_16);
-    // Rotulo y numero, del color de su curva: en esta pagina hay dos esferas
-    // Beschriftung und Zahl in der Farbe ihrer Kurve: Bei zwei Kreisen und zwei Kurven
-    // ist so sofort erkennbar, was zusammengehoert. Der BOGEN behaelt die Ampelfarbe des
-    // aktuellen Niveaus (gruen/gelb/rot).
+    lv_obj_set_size(left, 196, 196);
+    lv_obj_align(left, LV_ALIGN_CENTER, -106 + UI_X_OFFSET, 14);
+    gauge_create(&s_g_voc, left, 188, 18, &ui_font_48, &ui_font_22);
     lv_obj_set_style_text_color(s_g_voc.caption, col(GAS_COL_VOC), 0);
     lv_obj_set_style_text_color(s_g_voc.value, col(GAS_COL_VOC), 0);
 
     lv_obj_t *right = plain(tile);
-    lv_obj_set_size(right, 180, 180);
-    lv_obj_align(right, LV_ALIGN_CENTER, 94 + UI_X_OFFSET, 14);
-    gauge_create(&s_g_nox, right, 172, 16, &ui_font_48, &ui_font_16);
+    lv_obj_set_size(right, 196, 196);
+    lv_obj_align(right, LV_ALIGN_CENTER, 106 + UI_X_OFFSET, 14);
+    gauge_create(&s_g_nox, right, 188, 18, &ui_font_48, &ui_font_22);
     lv_obj_set_style_text_color(s_g_nox.caption, col(GAS_COL_NOX), 0);
     lv_obj_set_style_text_color(s_g_nox.value, col(GAS_COL_NOX), 0);
 
-    lv_obj_t *hint = make_label(tile, &ui_font_16, 0x64748b);
+    lv_obj_t *hint = make_label(tile, &ui_font_22, 0x64748b);
     lv_label_set_text(hint, T(STR_GAS_HINT));
-    lv_obj_align(hint, LV_ALIGN_CENTER, UI_X_OFFSET, 118);
+    lv_obj_align(hint, LV_ALIGN_CENTER, UI_X_OFFSET, 122);
     // Deckender Hintergrund in Displayfarbe, damit die Diagrammlinie dahinter
     // durchlaeuft und den Text nicht unleserlich macht.
     lv_obj_set_style_bg_color(hint, col(0x000000), 0);
@@ -439,25 +434,25 @@ static void build_idle(lv_obj_t *scr)
 static void build_noise(lv_obj_t *tile)
 {
     chart_create(&s_noise_chart, &s_noise_ser, tile, 430, 90, 0xfacc15);
-    lv_obj_align(s_noise_chart, LV_ALIGN_CENTER, UI_X_OFFSET, 100);
+    lv_obj_align(s_noise_chart, LV_ALIGN_CENTER, UI_X_OFFSET, 108);
 
-    gauge_create(&s_g_noise, tile, RING_D, 22, &ui_font_48, &ui_font_22);
-    lv_obj_align(s_g_noise.value, LV_ALIGN_CENTER, UI_X_OFFSET, -44);
-    lv_obj_align(s_g_noise.caption, LV_ALIGN_CENTER, UI_X_OFFSET, -96);
+    gauge_create(&s_g_noise, tile, RING_D, 22, &ui_font_48, &ui_font_28);
+    lv_obj_set_style_text_font(s_g_noise.caption, &ui_font_28, 0);
+    lv_obj_align(s_g_noise.caption, LV_ALIGN_CENTER, UI_X_OFFSET, -78);
+    lv_obj_align(s_g_noise.value, LV_ALIGN_CENTER, UI_X_OFFSET, -22);
 
     s_noise_level = make_label(tile, &ui_font_28, 0xffffff);
-    lv_obj_align(s_noise_level, LV_ALIGN_CENTER, UI_X_OFFSET, 30);
+    lv_obj_align(s_noise_level, LV_ALIGN_CENTER, UI_X_OFFSET, 48);
 }
 
 static void build_chrome(lv_obj_t *scr)
 {
-    // Uhrzeit und Netzwerkstatus INNERHALB des Rings, nicht darueber: So kann der
-    // Bogen bis an den Rand wachsen, ohne dass Text auf dem farbigen Ring liegt.
-    s_status_time = make_label(scr, &ui_font_28, 0xe2e8f0);
-    lv_obj_align(s_status_time, LV_ALIGN_CENTER, UI_X_OFFSET, -166);
+    // Grosse Uhrzeit und Netzwerkstatus INNERHALB des Rings
+    s_status_time = make_label(scr, &ui_font_48, 0xe2e8f0);
+    lv_obj_align(s_status_time, LV_ALIGN_CENTER, UI_X_OFFSET, -170);
 
     s_status_net = make_label(scr, &ui_font_16, 0x475569);
-    lv_obj_align(s_status_net, LV_ALIGN_CENTER, UI_X_OFFSET, -134);
+    lv_obj_align(s_status_net, LV_ALIGN_CENTER, UI_X_OFFSET, -128);
 
     // Die Akkuanzeige liegt unten im freien Bereich der Bogenoeffnung:
     // Stoert keine Seite und ist sofort ablesbar.
