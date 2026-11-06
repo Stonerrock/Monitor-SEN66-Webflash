@@ -12,7 +12,7 @@
 #define SCR_H 466
 #define CHART_POINTS 60
 
-// Margen para que nada caiga en el borde curvo del panel redondo.
+// Randabstand, damit nichts auf den gebogenen Rand des runden Displays faellt.
 #define EDGE 10
 
 // Horizontale Verschiebung (in Pixeln) zur Zentrierung auf dem runden Display
@@ -21,14 +21,14 @@
 // Maximaler Ring-Durchmesser zur vollstaendigen Ausnutzung der 1.75" Diagonale (466x466)
 #define RING_D 446
 
-// Hueco util dentro del anillo: radio exterior menos el grosor del arco.
-// De aqui salen todas las coordenadas de las paginas.
+// Nutzbarer Innenraum im Ring: Aussenradius abzueglich Bogendicke.
+// Dient als Referenz fuer die Koordinaten der Seiten.
 #define RING_INNER_R ((RING_D) / 2 - 22)
 
-// El ruido va AL FINAL para no mover los bits de pages_mask ya guardados.
+// Laerm/Schallpegel steht AM ENDE, um die bereits gespeicherten Bits von pages_mask nicht zu verschieben.
 enum { PAGE_SUMMARY = 0, PAGE_CO2, PAGE_PM, PAGE_GAS, PAGE_CLIMATE, PAGE_NOISE };
 
-// Indicador circular reutilizable: arco de 270 grados + valor + unidad.
+// Wiederverwendbare Kreisanzeige: 270-Grad-Bogen + Wert + Einheit.
 typedef struct {
     lv_obj_t *arc;
     lv_obj_t *value;
@@ -46,10 +46,10 @@ static lv_obj_t *s_status_msg;
 static lv_obj_t *s_status_net;
 static lv_obj_t *s_status_bat;
 
-// Vista de reposo: al no tocar nada, la pantalla se atenua y muestra TODAS
-// las magnitudes de un vistazo. Es un panel aparte por encima del tileview,
-// no una pagina mas: asi no entra en el desplazamiento y al despertar se
-// vuelve exactamente a donde estabas.
+// Ruhemodus: Bei Inaktivitaet wird das Display gedimmt und zeigt ALLE
+// Messwerte auf einen Blick. Dies ist ein separates Panel ueber dem Tileview,
+// keine zusaetzliche Seite: So wird es beim Wischen uebersprungen und beim Aufwachen
+// kehrt man exakt zu der Seite zurueck, auf der man war.
 static lv_obj_t *s_idle_panel;
 static lv_obj_t *s_idle_val[AIR_METRIC_COUNT];
 static lv_obj_t *s_idle_level;
@@ -58,7 +58,7 @@ static lv_obj_t *s_idle_ip;
 static bool s_idle_shown;
 static lv_obj_t *s_dots[UI_PAGE_COUNT];
 
-// pagina -> columna del tileview (-1 si esa pagina esta oculta)
+// Seite -> Spalte im Tileview (-1 wenn Seite ausgeblendet ist)
 static int s_page_col[UI_PAGE_COUNT];
 static int s_col_page[UI_PAGE_COUNT];
 static int s_cols;
@@ -111,9 +111,9 @@ static lv_obj_t *make_label(lv_obj_t *parent, const lv_font_t *font, uint32_t co
     return l;
 }
 
-// Valor secundario: rotulo pequeno con la unidad arriba y la cifra sola
-// debajo. Separar unidad y numero deja la cifra mas grande en el mismo ancho,
-// que dentro de un anillo escasea.
+// Sekundaerwert: kleine Beschriftung oben und der Wert allein darunter.
+// Durch die Trennung von Einheit und Zahl kann der Wert groesser dargestellt werden,
+// was innerhalb eines Rings wichtig ist.
 static void mini_create(lv_obj_t *parent, lv_obj_t **name, lv_obj_t **value,
                         int dx, int dy, const lv_font_t *font_value)
 {
@@ -132,7 +132,7 @@ static void gauge_create(gauge_t *g, lv_obj_t *parent, int size, int thickness,
     lv_obj_set_size(g->arc, size, size);
     lv_obj_align(g->arc, LV_ALIGN_CENTER, UI_X_OFFSET, 0);
     lv_arc_set_rotation(g->arc, 0);
-    lv_arc_set_bg_angles(g->arc, 135, 45); // 270 grados, hueco abajo
+    lv_arc_set_bg_angles(g->arc, 135, 45); // 270 Grad, Oeffnung unten
     lv_arc_set_range(g->arc, 0, 1000);
     lv_arc_set_value(g->arc, 0);
     lv_obj_remove_style(g->arc, NULL, LV_PART_KNOB);
@@ -172,7 +172,7 @@ static void gauge_update(gauge_t *g, air_metric_t m, float v)
     lv_label_set_text(g->value, buf);
     lv_label_set_text(g->unit, air_metric_unit_ui(m));
     lv_label_set_text(g->caption, i18n_metric(m));
-    // el valor cambia de anchura: realinear la unidad debajo
+    // Wertbreite aendert sich dynamisch: Einheit darunter neu ausrichten
     lv_obj_align_to(g->unit, g->value, LV_ALIGN_OUT_BOTTOM_MID, 0, 2);
 }
 
@@ -183,27 +183,27 @@ static void chart_create(lv_obj_t **out_chart, lv_chart_series_t **out_ser,
     lv_obj_set_size(c, w, h);
     lv_chart_set_type(c, LV_CHART_TYPE_LINE);
     lv_chart_set_point_count(c, CHART_POINTS);
-    lv_chart_set_div_line_count(c, 0, 0); // sin rejilla: la linea sola
+    lv_chart_set_div_line_count(c, 0, 0); // Ohne Gitter: nur die Linie
     lv_chart_set_update_mode(c, LV_CHART_UPDATE_MODE_SHIFT);
     lv_obj_set_style_bg_opa(c, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(c, 0, 0);
     lv_obj_set_style_pad_all(c, 0, 0);
     lv_obj_set_style_line_color(c, col(0x1e293b), LV_PART_MAIN);
     lv_obj_set_style_line_width(c, 2, LV_PART_ITEMS);
-    lv_obj_set_style_width(c, 0, LV_PART_INDICATOR);  // sin puntos
+    lv_obj_set_style_width(c, 0, LV_PART_INDICATOR);  // Keine Datenpunkte
     lv_obj_set_style_height(c, 0, LV_PART_INDICATOR);
     *out_ser = lv_chart_add_series(c, col(color), LV_CHART_AXIS_PRIMARY_Y);
     *out_chart = c;
 }
 
-// Segunda curva sobre la misma grafica, con su propia escala vertical: sirve
-// para superponer magnitudes de rango distinto (temperatura y humedad).
+// Zweite Kurve auf demselben Diagramm mit eigener vertikaler Skala:
+// Dient der Ueberlagerung unterschiedlicher Wertebereiche (z. B. Temperatur und Feuchte).
 static lv_chart_series_t *chart_add_secondary(lv_obj_t *c, uint32_t color)
 {
     return lv_chart_add_series(c, col(color), LV_CHART_AXIS_SECONDARY_Y);
 }
 
-// Vuelca la ventana del historico en la serie, con huecos donde no hay dato.
+// Uebertraegt das Zeitfenster aus dem Verlauf in die Datenreihe, mit Luecken bei fehlenden Daten.
 static void chart_refresh_axis(lv_obj_t *chart, lv_chart_series_t *ser,
                                air_metric_t m, lv_chart_axis_t axis)
 {
@@ -218,13 +218,11 @@ static void chart_refresh_axis(lv_obj_t *chart, lv_chart_series_t *ser,
         lo = air_gauge_min(m);
         hi = air_gauge_max(m);
     }
-    // lv_chart trabaja con enteros: para las metricas con decimales (la
-    // temperatura se mueve en decimas) escalamos x10, o la curva sale
-    // escalonada.
+    // lv_chart arbeitet mit Ganzzahlen: Bei Metriken mit Dezimalstellen (Temperatur
+    // in Zehntelgraden) skalieren wir mit x10, damit die Kurve nicht treppenartig wirkt.
     const float k = air_metric_decimals(m) ? 10.0f : 1.0f;
 
-    // margen del 10% y un minimo para que una linea plana no salga pegada
-    // al borde
+    // 10 % Toleranzbereich und Mindestabstand, damit eine flache Linie nicht direkt am Rand klebt
     float pad = (hi - lo) * 0.1f;
     if (pad < 0.5f) pad = 0.5f;
     lv_chart_set_range(chart, axis,
@@ -243,18 +241,17 @@ static void chart_refresh(lv_obj_t *chart, lv_chart_series_t *ser, air_metric_t 
     chart_refresh_axis(chart, ser, m, LV_CHART_AXIS_PRIMARY_Y);
 }
 
-// -------------------------------------------------------------------- paginas
+// -------------------------------------------------------------------- Seiten
 static void build_summary(lv_obj_t *tile)
 {
     gauge_create(&s_g_summary, tile, RING_D, 22,
                  &ui_font_28, &ui_font_22);
-    // en el resumen el centro lleva texto, no numero
+    // In der Uebersicht steht im Zentrum Text, keine Zahl
     lv_obj_add_flag(s_g_summary.value, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_g_summary.unit, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_g_summary.caption, LV_OBJ_FLAG_HIDDEN);
-    // Este anillo no mide: es el semaforo y se pinta entero. Devolvemos al
-    // indicador el grosor de la pista, o al llenarlo asoma el fondo por fuera
-    // y parece un fallo de dibujo.
+    // Dieser Ring misst nicht: Er dient als Ampel und wird vollstaendig gefuellt.
+    // Gleiche Dicke fuer Anzeige und Spur, damit kein Rand hervorblitzt.
     lv_obj_set_style_arc_width(s_g_summary.arc, 22, LV_PART_INDICATOR);
 
     s_sum_center = make_label(tile, &ui_font_28, 0xffffff);
@@ -262,7 +259,7 @@ static void build_summary(lv_obj_t *tile)
     s_sum_sub = make_label(tile, &ui_font_22, 0x94a3b8);
     lv_obj_align(s_sum_sub, LV_ALIGN_CENTER, UI_X_OFFSET, -34);
 
-    // Rejilla 2x2 de secundarios mit vergroessertem Padding und 28px-Werten
+    // 2x2-Raster von Sekundaerwerten mit vergroessertem Padding und 28px-Werten
     static const int dx[4] = {-92, 92, -92, 92};
     static const int dy[4] = {16, 16, 84, 84};
     for (int i = 0; i < 4; i++) {
@@ -273,10 +270,9 @@ static void build_summary(lv_obj_t *tile)
 
 static void build_co2(lv_obj_t *tile)
 {
-    // La grafica va PRIMERO para quedar por debajo de todo lo demas: cruza la
-    // pantalla de lado a lado y el anillo y el numero se pintan encima. El
-    // anillo la tapa donde la cruza, asi que la linea parece pasar por debajo
-    // y salir por los dos bordes.
+    // Das Diagramm wird ZUERST erstellt, damit es im Hintergrund liegt: Es verlaeuft
+    // ueber das gesamte Display, Ring und Zahl werden darueber gezeichnet.
+    // Der Ring ueberdeckt die Kurve, sodass die Linie darunter durchzulaufen scheint.
     chart_create(&s_co2_chart, &s_co2_ser, tile, 430, 90, 0x38bdf8);
     lv_obj_align(s_co2_chart, LV_ALIGN_CENTER, UI_X_OFFSET, 108);
 
@@ -290,22 +286,18 @@ static void build_co2(lv_obj_t *tile)
     lv_obj_align(s_co2_level, LV_ALIGN_CENTER, UI_X_OFFSET, 48);
 }
 
-// Turquesa: los otros colores de serie ya estan cogidos (CO2 azul, VOC
-// violeta, NOx celeste, ruido ambar).
+// Tuerkis: Die anderen Farben sind bereits belegt (CO2 blau, VOC violett, NOx hellblau, Laerm bernsteingelb).
 #define PM_COL 0x2dd4bf
 
 static void build_pm(lv_obj_t *tile)
 {
-    // La grafica, PRIMERO y a sangre, para que quede por debajo del anillo.
-    // Solo la PM2.5: es la que manda en esta pagina y la que importa para
-    // salud; cuatro curvas casi identicas no dirian nada.
+    // Das Diagramm ZUERST im Hintergrund: Nur PM2.5, da dieser Wert die Seite dominiert
+    // und gesundheitlich am wichtigsten ist; vier fast identische Kurven waeren unuebersichtlich.
     chart_create(&s_pm_chart, &s_pm_ser, tile, 430, 90, PM_COL);
     lv_obj_align(s_pm_chart, LV_ALIGN_CENTER, UI_X_OFFSET, 108);
 
-    // Misma gramatica visual que el CO2: anillo y cifra grande. Antes eran
-    // cuatro barras identicas en letra de 16 px, sin jerarquia y dejando
-    // vacio el tercio inferior. La PM2.5 es la que importa para salud, asi
-    // que se lleva el centro y las otras tres acompanan.
+    // Gleicher visueller Aufbau wie CO2: Ring und grosse Ziffer.
+    // PM2.5 steht im Fokus, die anderen drei Werte begleiten darunter.
     gauge_create(&s_g_pm, tile, RING_D, 22,
                  &ui_font_48, &ui_font_22);
     lv_obj_set_style_text_font(s_g_pm.caption, &ui_font_28, 0);
@@ -319,10 +311,9 @@ static void build_pm(lv_obj_t *tile)
     for (int i = 0; i < 3; i++) {
         mini_create(tile, &s_pm_name[i], &s_pm_val[i], dx[i], 76,
                     &ui_font_28);
-        // Las tres cifras caen DENTRO de la banda de la grafica (+55..+145),
-        // asi que sin esto la curva las tacharia. Fondo opaco del color de la
-        // pantalla y la linea pasa por detras y asoma por los huecos, igual
-        // que hace el aviso de la pagina de gases.
+        // Die drei Zahlen liegen INNERHALB des Diagrammbands (+55..+145).
+        // Ein deckender schwarzer Hintergrund sorgt dafuer, dass die Kurve dahinter durchlaeuft
+        // und die Beschriftung lesbar bleibt.
         for (lv_obj_t *o = s_pm_name[i]; o; o = (o == s_pm_name[i]) ? s_pm_val[i] : NULL) {
             lv_obj_set_style_bg_color(o, col(0x000000), 0);
             lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
@@ -331,18 +322,14 @@ static void build_pm(lv_obj_t *tile)
     }
 }
 
-// Un solo sitio para cada color: la linea de la grafica y el rotulo de su
-// esfera son la misma magnitud, y con dos literales sueltos acaban separandose
-// en cuanto alguien retoque uno.
+// Zentrale Farbdefinitionen: Diagrammlinie und Ringbeschriftung gehoeren zur selben Metrik.
 #define GAS_COL_VOC 0xa78bfa
 #define GAS_COL_NOX 0x38bdf8
 
 static void build_gas(lv_obj_t *tile)
 {
-    // Misma gramatica que CO2 y clima: la grafica va PRIMERO, a sangre y por
-    // debajo de las dos esferas, en banda inferior (y~+100) para no cruzar
-    // las cifras. VOC en el eje primario, NOx en el secundario: comparten
-    // dibujo pero no escala, igual que temperatura/humedad en clima.
+    // Gleicher Aufbau wie CO2 und Klima: Diagramm ZUERST im Hintergrund im unteren Bereich (y~+100).
+    // VOC auf Primaerachse, NOx auf Sekundaerachse (gleiches Diagramm, getrennte Skalierung).
     chart_create(&s_gas_chart, &s_gas_ser_voc, tile, 430, 90, GAS_COL_VOC);
     s_gas_ser_nox = chart_add_secondary(s_gas_chart, GAS_COL_NOX);
     lv_obj_align(s_gas_chart, LV_ALIGN_CENTER, 0, 100);
@@ -358,9 +345,9 @@ static void build_gas(lv_obj_t *tile)
     lv_obj_align(left, LV_ALIGN_CENTER, -94 + UI_X_OFFSET, 14);
     gauge_create(&s_g_voc, left, 172, 16, &ui_font_48, &ui_font_16);
     // Rotulo y numero, del color de su curva: en esta pagina hay dos esferas
-    // y dos lineas, y hace falta saber cual va con cual. El ARCO se queda con
-    // el color del nivel (verde/ambar/rojo): es el semaforo que hablan todas
-    // las paginas, y cambiarlo aqui por un color fijo lo perderia.
+    // Beschriftung und Zahl in der Farbe ihrer Kurve: Bei zwei Kreisen und zwei Kurven
+    // ist so sofort erkennbar, was zusammengehoert. Der BOGEN behaelt die Ampelfarbe des
+    // aktuellen Niveaus (gruen/gelb/rot).
     lv_obj_set_style_text_color(s_g_voc.caption, col(GAS_COL_VOC), 0);
     lv_obj_set_style_text_color(s_g_voc.value, col(GAS_COL_VOC), 0);
 
@@ -374,6 +361,8 @@ static void build_gas(lv_obj_t *tile)
     lv_obj_t *hint = make_label(tile, &ui_font_16, 0x64748b);
     lv_label_set_text(hint, T(STR_GAS_HINT));
     lv_obj_align(hint, LV_ALIGN_CENTER, UI_X_OFFSET, 118);
+    // Deckender Hintergrund in Displayfarbe, damit die Diagrammlinie dahinter
+    // durchlaeuft und den Text nicht unleserlich macht.
     lv_obj_set_style_bg_color(hint, col(0x000000), 0);
     lv_obj_set_style_bg_opa(hint, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_hor(hint, 6, 0);
@@ -385,51 +374,42 @@ static void build_climate(lv_obj_t *tile)
     lv_label_set_text(title, T(STR_PAGE_CLIMATE));
     lv_obj_align(title, LV_ALIGN_CENTER, UI_X_OFFSET, -78);
 
-    // Las dos cifras al mismo tamano: la humedad tambien es un dato, no un
-    // pie de foto. Cada una del color de su curva, que asi la grafica se
-    // explica sola y no hace falta leyenda.
-    // Lado a lado en vez de apiladas: deja sitio abajo para que la curva
-    // ocupe todo el ancho, que es el efecto que se buscaba.
+    // Beide Zahlen in gleicher Groesse: Feuchtigkeit ist eine eigenstaendige Messgroesse.
+    // Nebeneinander angeordnet, damit darunter ausreichend Platz fuer das breite Diagramm bleibt.
     s_cl_temp = make_label(tile, &ui_font_48, 0xf59e0b);
     lv_obj_align(s_cl_temp, LV_ALIGN_CENTER, -96 + UI_X_OFFSET, -16);
     s_cl_hum = make_label(tile, &ui_font_48, 0x38bdf8);
     lv_obj_align(s_cl_hum, LV_ALIGN_CENTER, 96 + UI_X_OFFSET, -16);
 
-    // Sin anillo esta pagina puede permitirse una grafica ancha. Las dos
-    // curvas comparten dibujo pero no escala: la humedad va al eje secundario
-    // porque se mueve por el 50 % y la temperatura por los 25 grados.
+    // Ohne Ring kann diese Seite ein breites Diagramm nutzen. Beide Kurven teilen sich
+    // das Diagramm, nutzen aber getrennte vertikale Skalen (Primaer- und Sekundaerachse).
     chart_create(&s_cl_chart, &s_cl_ser, tile, 430, 110, 0xf59e0b);
     s_cl_ser_hum = chart_add_secondary(s_cl_chart, 0x38bdf8);
     lv_obj_align(s_cl_chart, LV_ALIGN_CENTER, UI_X_OFFSET, 86);
 }
 
-// ------------------------------------------------------------------ estado
-// Las nueve magnitudes en rejilla 3x3, con el veredicto arriba. A y=+123, que
-// es lo mas bajo que llega el texto, el cristal deja 156 px a cada lado: de
-// ahi las columnas a +-112.
+// ------------------------------------------------------------------ Status & Ruheansicht
+// Die neun Messgroessen im 3x3-Raster mit Gesamtbewertung oben.
 static void build_idle(lv_obj_t *scr)
 {
     s_idle_panel = plain(scr);
     lv_obj_set_size(s_idle_panel, SCR_W, SCR_H);
     lv_obj_center(s_idle_panel);
     lv_obj_add_flag(s_idle_panel, LV_OBJ_FLAG_HIDDEN);
-    // Que no capture toques: el gesto tiene que llegar igual para despertar.
+    // Keine Beruehrungen abfangen: Geste muss durchgehen, um den Bildschirm aufzuwecken.
     lv_obj_remove_flag(s_idle_panel, LV_OBJ_FLAG_CLICKABLE);
 
     s_idle_level = make_label(s_idle_panel, &ui_font_28, 0xffffff);
     lv_obj_align(s_idle_level, LV_ALIGN_CENTER, 0, -92);
 
-    // El ruido va aparte, bajo el semaforo, y NO en la rejilla: no es calidad
-    // del aire y no cuenta para el nivel global. Ademas mete una decima fila
-    // que chocaria con el indicador de bateria (y = +148).
+    // Laerm steht separat unter der Ampel und NICHT im Raster: Es gehoert nicht zur
+    // chemischen Luftqualitaet und fliesst nicht in die Gesamtbewertung ein.
     s_idle_noise_name = make_label(s_idle_panel, &ui_font_14, 0x64748b);
     lv_obj_align(s_idle_noise_name, LV_ALIGN_CENTER, -30, -64);
     s_idle_val[AIR_NOISE] = make_label(s_idle_panel, &ui_font_16, 0xffffff);
     lv_obj_align(s_idle_val[AIR_NOISE], LV_ALIGN_CENTER, 26, -64);
 
-    // La IP, abajo del todo: es la vista que se mira cuando quieres datos, y
-    // sin esto hay que ir al router para dar con el panel web. Encima del
-    // indicador de bateria (+148), que vive en la chrome.
+    // IP-Adresse ganz unten ueber der Akkuanzeige: Nuetzlich fuer den Zugriff auf das Web-Panel.
     s_idle_ip = make_label(s_idle_panel, &ui_font_14, 0x475569);
     lv_obj_set_style_text_align(s_idle_ip, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(s_idle_ip, LV_ALIGN_CENTER, 0, 126);
@@ -441,8 +421,7 @@ static void build_idle(lv_obj_t *scr)
     };
     for (int i = 0; i < 9; i++) {
         const int dx = (i % 3 - 1) * 112;
-        // Filas cada 64 px, no 72: con 72 la ultima chocaba con el indicador
-        // de bateria, que vive a y=+148.
+        // Zeilenabstand so gewaehlt, dass die unterste Zeile nicht mit der Akkuanzeige kollidiert
         const int dy = -40 + (i / 3) * 64;
         lv_obj_t *name = make_label(s_idle_panel, &ui_font_14, 0x64748b);
         lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, 0);
@@ -472,16 +451,16 @@ static void build_noise(lv_obj_t *tile)
 
 static void build_chrome(lv_obj_t *scr)
 {
-    // Hora y estado de red DENTRO del anillo, no encima: es lo que permite
-    // que el arco crezca hasta el borde sin que el texto caiga sobre el color.
+    // Uhrzeit und Netzwerkstatus INNERHALB des Rings, nicht darueber: So kann der
+    // Bogen bis an den Rand wachsen, ohne dass Text auf dem farbigen Ring liegt.
     s_status_time = make_label(scr, &ui_font_28, 0xe2e8f0);
     lv_obj_align(s_status_time, LV_ALIGN_CENTER, UI_X_OFFSET, -166);
 
     s_status_net = make_label(scr, &ui_font_16, 0x475569);
     lv_obj_align(s_status_net, LV_ALIGN_CENTER, UI_X_OFFSET, -134);
 
-    // La bateria va abajo, en el hueco que el anillo deja libre: ahi no
-    // estorba a ninguna pagina y se ve de un vistazo.
+    // Die Akkuanzeige liegt unten im freien Bereich der Bogenoeffnung:
+    // Stoert keine Seite und ist sofort ablesbar.
     s_status_bat = make_label(scr, &ui_font_16, 0x94a3b8);
     lv_obj_align(s_status_bat, LV_ALIGN_CENTER, UI_X_OFFSET, 156);
 
@@ -533,7 +512,7 @@ static void on_activity(lv_event_t *e)
     ui_wake();
 }
 
-// -------------------------------------------------------------------- api
+// -------------------------------------------------------------------- API
 void ui_init(air_history_t *hist, const ui_config_t *cfg,
              void (*set_brightness)(uint8_t))
 {
@@ -542,7 +521,7 @@ void ui_init(air_history_t *hist, const ui_config_t *cfg,
     s_set_brightness = set_brightness;
     air_sample_clear(&s_last);
 
-    ui_fonts_init(); // copias de las Montserrat con la reserva alemana
+    ui_fonts_init(); // Kopien der Montserrat-Schriften mit deutschen Umlauten
 
     lv_obj_t *scr = lv_screen_active();
     lv_obj_set_style_bg_color(scr, col(0x000000), 0);
@@ -556,8 +535,8 @@ void ui_init(air_history_t *hist, const ui_config_t *cfg,
     lv_obj_set_scrollbar_mode(s_tv, LV_SCROLLBAR_MODE_OFF);
     lv_obj_add_event_cb(s_tv, on_tile_change, LV_EVENT_VALUE_CHANGED, NULL);
 
-    // Solo se crean las paginas habilitadas, en su orden natural. Cambiar la
-    // mascara requiere reiniciar (el servidor web reinicia al guardar).
+    // Nur aktivierte Seiten werden in ihrer natuerlichen Reihenfolge erzeugt.
+    // Eine Aenderung der Maske erfordert einen Neustart (Webserver startet beim Speichern neu).
     s_cols = 0;
     for (int p = 0; p < UI_PAGE_COUNT; p++) {
         s_page_col[p] = -1;
@@ -577,7 +556,7 @@ void ui_init(air_history_t *hist, const ui_config_t *cfg,
         s_col_page[s_cols] = p;
         s_cols++;
     }
-    if (s_cols == 0) { // mascara vacia: al menos el resumen
+    if (s_cols == 0) { // Leere Maske: mindestens die Uebersicht anzeigen
         lv_obj_t *tile = lv_tileview_add_tile(s_tv, 0, 0, LV_DIR_HOR);
         build_summary(tile);
         s_page_col[PAGE_SUMMARY] = 0;
@@ -619,8 +598,8 @@ void ui_update(const air_sample_t *s)
             const air_metric_t drv = air_overall_driver(s);
             lv_obj_set_style_arc_color(s_g_summary.arc, col(air_level_color(lvl)),
                                        LV_PART_INDICATOR);
-            // El anillo del resumen no mide nada: es el semaforo. Se pinta
-            // entero del color del nivel (vacio solo mientras no hay datos).
+            // Der Ring der Uebersicht misst nichts: Er dient als Farbbewertung (Ampel).
+            // Er wird vollstaendig gefuellt (nur leer, solange keine Daten vorliegen).
             lv_arc_set_value(s_g_summary.arc, lvl == AIR_LVL_UNKNOWN ? 0 : 1000);
             lv_label_set_text(s_sum_center, i18n_level(lvl));
             lv_obj_set_style_text_color(s_sum_center, col(air_level_color(lvl)), 0);
@@ -633,14 +612,13 @@ void ui_update(const air_sample_t *s)
                 lv_label_set_text(s_sum_sub, buf);
             }
             static const air_metric_t mini[4] = {AIR_CO2, AIR_PM25, AIR_TEMP, AIR_HUM};
-            // Rotulos abreviados a proposito: "Temperatura" no cabe a 62 px
-            // del eje sin salirse del hueco del anillo.
+            // Abgekuerzte Beschriftungen, damit sie innerhalb des Rings nicht ueberstehen
             for (int i = 0; i < 4; i++) {
-                // rotulo + unidad: la cifra va sola debajo y asi cabe mas grande
+                // Beschriftung + Einheit: Die Zahl steht separat darunter fuer maximale Groesse
                 const char *rot = (mini[i] == AIR_TEMP) ? T(STR_LBL_TEMP)
                                 : (mini[i] == AIR_HUM)  ? T(STR_LBL_HUM)
                                                         : i18n_metric(mini[i]);
-                snprintf(buf, sizeof(buf), "%s %s", rot, air_metric_unit_ui(mini[i]));
+                snprintf(buf, sizeof(buf), \"%s %s\", rot, air_metric_unit_ui(mini[i]));
                 lv_label_set_text(s_sum_name[i], buf);
                 fmt_value(buf2, sizeof(buf2), mini[i], s->v[mini[i]]);
                 lv_label_set_text(s_sum_val[i], buf2);
@@ -698,10 +676,10 @@ void ui_update(const air_sample_t *s)
             break;
         case PAGE_CLIMATE: {
             fmt_value(buf2, sizeof(buf2), AIR_TEMP, s->v[AIR_TEMP]);
-            snprintf(buf, sizeof(buf), "%s C", buf2);
+            snprintf(buf, sizeof(buf), \"%s C\", buf2);
             lv_label_set_text(s_cl_temp, buf);
             fmt_value(buf2, sizeof(buf2), AIR_HUM, s->v[AIR_HUM]);
-            snprintf(buf, sizeof(buf), "%s %%", buf2);
+            snprintf(buf, sizeof(buf), \"%s %%\", buf2);
             lv_label_set_text(s_cl_hum, buf);
             chart_refresh_axis(s_cl_chart, s_cl_ser, AIR_TEMP, LV_CHART_AXIS_PRIMARY_Y);
             chart_refresh_axis(s_cl_chart, s_cl_ser_hum, AIR_HUM, LV_CHART_AXIS_SECONDARY_Y);
@@ -716,24 +694,23 @@ void ui_set_status(const char *time_str, bool wifi, bool mqtt, const char *msg,
                    int bat_pct, bool charging)
 {
     if (!s_status_time) return;
-    lv_label_set_text(s_status_time, time_str ? time_str : "");
+    lv_label_set_text(s_status_time, time_str ? time_str : \"\");
 
     char net[32];
-    snprintf(net, sizeof(net), "%s%s%s",
-             wifi ? "wifi" : T(STR_NO_WIFI),
-             (wifi && mqtt) ? " + " : "",
-             (wifi && mqtt) ? "mqtt" : "");
+    snprintf(net, sizeof(net), \"%s%s%s\",
+             wifi ? \"wifi\" : T(STR_NO_WIFI),
+             (wifi && mqtt) ? \" + \" : \"\",
+             (wifi && mqtt) ? \"mqtt\" : \"\");
     lv_label_set_text(s_status_net, net);
     lv_obj_set_style_text_color(s_status_net, col(wifi ? (mqtt ? 0x22c55e : 0x94a3b8)
                                                       : 0x64748b), 0);
 
-    lv_label_set_text(s_status_msg, msg ? msg : "");
+    lv_label_set_text(s_status_msg, msg ? msg : \"\");
 
     if (bat_pct < 0) {
-        lv_label_set_text(s_status_bat, "");
+        lv_label_set_text(s_status_bat, \"\");
     } else {
-        // Los simbolos de bateria son glifos de las propias fuentes de LVGL,
-        // asi que no rompen la regla de solo-ASCII de los textos.
+        // Die Akkusymbole stammen direkt aus den Schriften von LVGL (Symbols)
         const char *icono = charging      ? LV_SYMBOL_CHARGE
                           : bat_pct >= 80 ? LV_SYMBOL_BATTERY_FULL
                           : bat_pct >= 55 ? LV_SYMBOL_BATTERY_3
@@ -741,7 +718,7 @@ void ui_set_status(const char *time_str, bool wifi, bool mqtt, const char *msg,
                           : bat_pct >= 12 ? LV_SYMBOL_BATTERY_1
                                           : LV_SYMBOL_BATTERY_EMPTY;
         char buf[24];
-        snprintf(buf, sizeof(buf), "%s %d%%", icono, bat_pct);
+        snprintf(buf, sizeof(buf), \"%s %d%%\", icono, bat_pct);
         lv_label_set_text(s_status_bat, buf);
         const uint32_t color = charging     ? 0x22c55e
                              : bat_pct < 12 ? 0xef4444
@@ -755,9 +732,8 @@ void ui_set_on_battery(bool on_battery)
 {
     if (on_battery == s_on_battery) return;
     s_on_battery = on_battery;
-    // Al ENCHUFAR se enciende: acabas de acercarte al aparato y quieres verlo.
-    // Al desenchufar NO, que es justo cuando hay que ahorrar; ademas el tope
-    // de bateria es corto y se apagara sola enseguida.
+    // Beim ANSTECKEN einschalten: Man tritt an das Geraet heran und moechte Werte sehen.
+    // Beim Abstecken NICHT aufwecken, um sofort Energie zu sparen.
     if (!on_battery) ui_wake();
 }
 
@@ -779,15 +755,14 @@ void ui_goto_page(int page)
 
 void ui_wake(void)
 {
-    // Marcar actividad en LVGL: si despertamos por codigo (cambio de perfil)
-    // y no por un dedo, su contador seguiria alto y se apagaria otra vez en
-    // el siguiente tick.
+    // Aktivitaet in LVGL registrieren: Bei manuellem Aufwecken wird der Inaktivitaetszaehler
+    // zurueckgesetzt, damit das Display nicht im naechsten Tick wieder abschaltet.
     lv_display_trigger_activity(NULL);
     s_idle_s = 0;
     if (s_idle_shown) {
         s_idle_shown = false;
         lv_obj_add_flag(s_idle_panel, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(s_tv, LV_OBJ_FLAG_HIDDEN); // vuelve la pagina donde estabas
+        lv_obj_remove_flag(s_tv, LV_OBJ_FLAG_HIDDEN); // Kehrt zur vorherigen Seite zurueck
     }
     if (s_dimmed) {
         s_dimmed = false;
@@ -798,22 +773,18 @@ void ui_wake(void)
 void ui_set_ip(const char *ip)
 {
     if (!s_idle_ip) return;
-    lv_label_set_text(s_idle_ip, (ip && ip[0]) ? ip : "");
+    lv_label_set_text(s_idle_ip, (ip && ip[0]) ? ip : \"\");
 }
 
 void ui_tick_1s(void)
 {
-    // La inactividad la lleva LVGL, no un contador nuestro. El motivo: el
-    // evento de pulsacion se escuchaba en el objeto pantalla, pero el
-    // tileview la cubre entera y se queda el toque, y en LVGL los eventos NO
-    // suben al padre salvo que se pida. Resultado: la pantalla se apagaba y
-    // ya no habia forma de despertarla tocando.
+    // Die Inaktivitaet wird von LVGL verwaltet:
+    // Der Klick-Event wird auf dem Screen-Objekt registriert.
     const uint32_t inactivo_ms = lv_display_get_inactive_time(NULL);
     s_idle_s = inactivo_ms / 1000;
 
-    // Atenuado por inactividad (en AMOLED apagar ahorra de verdad).
-    // Con bateria se apaga entera, y sin esperar a lo configurado: el valor
-    // por defecto es 0 (nunca), que enchufado esta bien y en bateria no.
+    // Abdunkeln bei Inaktivitaet (bei AMOLED spart Abschalten spuerbar Strom).
+    // Im Akkubetrieb schaltet das Display vollstaendig ab.
     const uint32_t timeout = s_on_battery
         ? (s_cfg.screen_timeout_s && s_cfg.screen_timeout_s < UI_BATTERY_TIMEOUT_S
                ? s_cfg.screen_timeout_s : UI_BATTERY_TIMEOUT_S)
@@ -821,18 +792,17 @@ void ui_tick_1s(void)
     const uint8_t dim_to = s_on_battery ? 0 : s_cfg.night_brightness;
 
     if (s_dimmed && inactivo_ms < 1500) {
-        ui_wake(); // ha habido toque: encender y volver a la pagina de antes
+        ui_wake(); // Beruehrung erkannt: Aufwecken und vorherige Seite anzeigen
     } else if (timeout && !s_dimmed && s_idle_s >= timeout) {
         s_dimmed = true;
         if (s_set_brightness) s_set_brightness(dim_to);
-        // Con bateria la pantalla se apaga entera, asi que no tiene
-        // sentido dibujar el resumen; enchufado se atenua y lo muestra.
+        // Im Akkubetrieb schaltet das Display ganz ab, daher kein Ruhebildschirm;
+        // am Netzteil wird gedimmt und die Uebersicht eingeblendet.
         if (!s_on_battery && s_idle_panel) {
             s_idle_shown = true;
             lv_obj_add_flag(s_tv, LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_flag(s_idle_panel, LV_OBJ_FLAG_HIDDEN);
         }
     }
-    // Sin rotacion automatica: las paginas se pasan a dedo. Lo que gira solo
-    // cuesta mas de lo que aporta, porque nunca esta la que quieres mirar.
+    // Keine automatische Seitenrotation: Seiten werden manuell per Wischgeste gewechselt.
 }
