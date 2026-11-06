@@ -13,13 +13,13 @@
 #define CHART_POINTS 60
 
 // Margen para que nada caiga en el borde curvo del panel redondo.
-#define EDGE 18
+#define EDGE 10
 
 // Horizontale Verschiebung (in Pixeln) zur Zentrierung auf dem runden Display
 #define UI_X_OFFSET 4
 
 // Maximaler Ring-Durchmesser zur vollstaendigen Ausnutzung der 1.75" Diagonale (466x466)
-#define RING_D 430
+#define RING_D 446
 
 // Hueco util dentro del anillo: radio exterior menos el grosor del arco.
 // De aqui salen todas las coordenadas de las paginas.
