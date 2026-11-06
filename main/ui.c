@@ -365,16 +365,20 @@ static void build_gas(lv_obj_t *tile)
 
 static void build_climate(lv_obj_t *tile)
 {
-    lv_obj_t *title = make_label(tile, &ui_font_28, 0x94a3b8);
-    lv_label_set_text(title, T(STR_PAGE_CLIMATE));
-    lv_obj_align(title, LV_ALIGN_CENTER, UI_X_OFFSET, -78);
+    // Spaltenkoepfe in Kurvenfarbe, aufgeteilt nach links (-108) und rechts (+108)
+    lv_obj_t *lbl_temp = make_label(tile, &ui_font_22, 0xf59e0b);
+    lv_label_set_text(lbl_temp, i18n_metric(AIR_TEMP));
+    lv_obj_align(lbl_temp, LV_ALIGN_CENTER, -108 + UI_X_OFFSET, -66);
 
-    // Beide Zahlen in gleicher Groesse: Feuchtigkeit ist eine eigenstaendige Messgroesse.
-    // Nebeneinander angeordnet, damit darunter ausreichend Platz fuer das breite Diagramm bleibt.
     s_cl_temp = make_label(tile, &ui_font_48, 0xf59e0b);
-    lv_obj_align(s_cl_temp, LV_ALIGN_CENTER, -96 + UI_X_OFFSET, -16);
+    lv_obj_align(s_cl_temp, LV_ALIGN_CENTER, -108 + UI_X_OFFSET, -22);
+
+    lv_obj_t *lbl_hum = make_label(tile, &ui_font_22, 0x38bdf8);
+    lv_label_set_text(lbl_hum, i18n_metric(AIR_HUM));
+    lv_obj_align(lbl_hum, LV_ALIGN_CENTER, 108 + UI_X_OFFSET, -66);
+
     s_cl_hum = make_label(tile, &ui_font_48, 0x38bdf8);
-    lv_obj_align(s_cl_hum, LV_ALIGN_CENTER, 96 + UI_X_OFFSET, -16);
+    lv_obj_align(s_cl_hum, LV_ALIGN_CENTER, 108 + UI_X_OFFSET, -22);
 
     // Ohne Ring kann diese Seite ein breites Diagramm nutzen. Beide Kurven teilen sich
     // das Diagramm, nutzen aber getrennte vertikale Skalen (Primaer- und Sekundaerachse).
@@ -671,7 +675,7 @@ void ui_update(const air_sample_t *s)
             break;
         case PAGE_CLIMATE: {
             fmt_value(buf2, sizeof(buf2), AIR_TEMP, s->v[AIR_TEMP]);
-            snprintf(buf, sizeof(buf), "%s C", buf2);
+            snprintf(buf, sizeof(buf), "%s °C", buf2);
             lv_label_set_text(s_cl_temp, buf);
             fmt_value(buf2, sizeof(buf2), AIR_HUM, s->v[AIR_HUM]);
             snprintf(buf, sizeof(buf), "%s %%", buf2);
