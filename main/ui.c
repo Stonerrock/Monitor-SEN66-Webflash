@@ -13,12 +13,13 @@
 #define CHART_POINTS 60
 
 // Margen para que nada caiga en el borde curvo del panel redondo.
-#define EDGE 34
+#define EDGE 26
 
-// Diametro de los anillos grandes. Antes era 322 para dejar sitio arriba a
-// la hora y el estado de red; ahora esos van DENTRO del anillo, asi que el
-// arco puede irse casi al borde. 380 deja 43 px hasta el cristal.
-#define RING_D 380
+// Horizontale Verschiebung (in Pixeln) zur Zentrierung auf dem runden Display
+#define UI_X_OFFSET 4
+
+// Groesserer Ring-Durchmesser zur optimalen Ausnutzung der 1.75" Diagonale (466x466)
+#define RING_D 412
 
 // Hueco util dentro del anillo: radio exterior menos el grosor del arco.
 // De aqui salen todas las coordenadas de las paginas.
@@ -116,12 +117,12 @@ static lv_obj_t *make_label(lv_obj_t *parent, const lv_font_t *font, uint32_t co
 static void mini_create(lv_obj_t *parent, lv_obj_t **name, lv_obj_t **value,
                         int dx, int dy, const lv_font_t *font_value)
 {
-    *name = make_label(parent, &ui_font_14, 0x64748b);
+    *name = make_label(parent, &ui_font_16, 0x64748b);
     lv_obj_set_style_text_align(*name, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(*name, LV_ALIGN_CENTER, dx, dy);
+    lv_obj_align(*name, LV_ALIGN_CENTER, dx + UI_X_OFFSET, dy);
     *value = make_label(parent, font_value, 0xffffff);
     lv_obj_set_style_text_align(*value, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(*value, LV_ALIGN_CENTER, dx, dy + 22);
+    lv_obj_align(*value, LV_ALIGN_CENTER, dx + UI_X_OFFSET, dy + 22);
 }
 
 static void gauge_create(gauge_t *g, lv_obj_t *parent, int size, int thickness,
@@ -129,7 +130,7 @@ static void gauge_create(gauge_t *g, lv_obj_t *parent, int size, int thickness,
 {
     g->arc = lv_arc_create(parent);
     lv_obj_set_size(g->arc, size, size);
-    lv_obj_center(g->arc);
+    lv_obj_align(g->arc, LV_ALIGN_CENTER, UI_X_OFFSET, 0);
     lv_arc_set_rotation(g->arc, 0);
     lv_arc_set_bg_angles(g->arc, 135, 45); // 270 grados, hueco abajo
     lv_arc_set_range(g->arc, 0, 1000);
@@ -147,11 +148,11 @@ static void gauge_create(gauge_t *g, lv_obj_t *parent, int size, int thickness,
     lv_obj_set_style_arc_rounded(g->arc, true, LV_PART_INDICATOR);
 
     g->value = make_label(parent, font_value, 0xffffff);
-    lv_obj_align(g->value, LV_ALIGN_CENTER, 0, -10);
+    lv_obj_align(g->value, LV_ALIGN_CENTER, UI_X_OFFSET, -10);
     g->unit = make_label(parent, font_small, 0x94a3b8);
     lv_obj_align_to(g->unit, g->value, LV_ALIGN_OUT_BOTTOM_MID, 0, 2);
     g->caption = make_label(parent, font_small, 0x64748b);
-    lv_obj_align(g->caption, LV_ALIGN_CENTER, 0, -size / 2 + thickness + 22);
+    lv_obj_align(g->caption, LV_ALIGN_CENTER, UI_X_OFFSET, -size / 2 + thickness + 22);
 }
 
 static void gauge_update(gauge_t *g, air_metric_t m, float v)
