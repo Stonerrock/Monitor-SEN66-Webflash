@@ -13,13 +13,13 @@
 #define CHART_POINTS 60
 
 // Margen para que nada caiga en el borde curvo del panel redondo.
-#define EDGE 26
+#define EDGE 18
 
 // Horizontale Verschiebung (in Pixeln) zur Zentrierung auf dem runden Display
 #define UI_X_OFFSET 4
 
-// Groesserer Ring-Durchmesser zur optimalen Ausnutzung der 1.75" Diagonale (466x466)
-#define RING_D 412
+// Maximaler Ring-Durchmesser zur vollstaendigen Ausnutzung der 1.75" Diagonale (466x466)
+#define RING_D 430
 
 // Hueco util dentro del anillo: radio exterior menos el grosor del arco.
 // De aqui salen todas las coordenadas de las paginas.
@@ -481,18 +481,18 @@ static void build_chrome(lv_obj_t *scr)
     // Hora y estado de red DENTRO del anillo, no encima: es lo que permite
     // que el arco crezca hasta el borde sin que el texto caiga sobre el color.
     s_status_time = make_label(scr, &ui_font_16, 0xe2e8f0);
-    lv_obj_align(s_status_time, LV_ALIGN_CENTER, 0, -146);
+    lv_obj_align(s_status_time, LV_ALIGN_CENTER, UI_X_OFFSET, -152);
 
-    s_status_net = make_label(scr, &ui_font_14, 0x475569);
-    lv_obj_align(s_status_net, LV_ALIGN_CENTER, 0, -124);
+    s_status_net = make_label(scr, &ui_font_16, 0x475569);
+    lv_obj_align(s_status_net, LV_ALIGN_CENTER, UI_X_OFFSET, -128);
 
     // La bateria va abajo, en el hueco que el anillo deja libre: ahi no
     // estorba a ninguna pagina y se ve de un vistazo.
     s_status_bat = make_label(scr, &ui_font_16, 0x94a3b8);
-    lv_obj_align(s_status_bat, LV_ALIGN_CENTER, 0, 148);
+    lv_obj_align(s_status_bat, LV_ALIGN_CENTER, UI_X_OFFSET, 152);
 
-    s_status_msg = make_label(scr, &ui_font_14, 0xfacc15);
-    lv_obj_align(s_status_msg, LV_ALIGN_BOTTOM_MID, 0, -52);
+    s_status_msg = make_label(scr, &ui_font_16, 0xfacc15);
+    lv_obj_align(s_status_msg, LV_ALIGN_BOTTOM_MID, UI_X_OFFSET, -52);
 
     for (int i = 0; i < UI_PAGE_COUNT; i++) {
         s_dots[i] = lv_obj_create(scr);
@@ -508,7 +508,7 @@ static void build_chrome(lv_obj_t *scr)
 static void layout_dots(void)
 {
     const int gap = 16;
-    const int x0 = -(s_cols - 1) * gap / 2;
+    const int x0 = -(s_cols - 1) * gap / 2 + UI_X_OFFSET;
     for (int c = 0; c < s_cols; c++) {
         lv_obj_t *d = s_dots[c];
         lv_obj_remove_flag(d, LV_OBJ_FLAG_HIDDEN);
