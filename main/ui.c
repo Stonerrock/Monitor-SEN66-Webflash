@@ -398,20 +398,20 @@ static void build_idle(lv_obj_t *scr)
     // Keine Beruehrungen abfangen: Geste muss durchgehen, um den Bildschirm aufzuwecken.
     lv_obj_remove_flag(s_idle_panel, LV_OBJ_FLAG_CLICKABLE);
 
-    s_idle_level = make_label(s_idle_panel, &ui_font_28, 0xffffff);
-    lv_obj_align(s_idle_level, LV_ALIGN_CENTER, 0, -92);
+    s_idle_level = make_label(s_idle_panel, &ui_font_48, 0xffffff);
+    lv_obj_align(s_idle_level, LV_ALIGN_CENTER, UI_X_OFFSET, -100);
 
     // Laerm steht separat unter der Ampel und NICHT im Raster: Es gehoert nicht zur
     // chemischen Luftqualitaet und fliesst nicht in die Gesamtbewertung ein.
-    s_idle_noise_name = make_label(s_idle_panel, &ui_font_14, 0x64748b);
-    lv_obj_align(s_idle_noise_name, LV_ALIGN_CENTER, -30, -64);
-    s_idle_val[AIR_NOISE] = make_label(s_idle_panel, &ui_font_16, 0xffffff);
-    lv_obj_align(s_idle_val[AIR_NOISE], LV_ALIGN_CENTER, 26, -64);
+    s_idle_noise_name = make_label(s_idle_panel, &ui_font_16, 0x64748b);
+    lv_obj_align(s_idle_noise_name, LV_ALIGN_CENTER, -36 + UI_X_OFFSET, -62);
+    s_idle_val[AIR_NOISE] = make_label(s_idle_panel, &ui_font_22, 0xffffff);
+    lv_obj_align(s_idle_val[AIR_NOISE], LV_ALIGN_CENTER, 32 + UI_X_OFFSET, -62);
 
     // IP-Adresse ganz unten ueber der Akkuanzeige: Nuetzlich fuer den Zugriff auf das Web-Panel.
-    s_idle_ip = make_label(s_idle_panel, &ui_font_14, 0x475569);
+    s_idle_ip = make_label(s_idle_panel, &ui_font_16, 0x475569);
     lv_obj_set_style_text_align(s_idle_ip, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(s_idle_ip, LV_ALIGN_CENTER, 0, 126);
+    lv_obj_align(s_idle_ip, LV_ALIGN_CENTER, UI_X_OFFSET, 142);
 
     static const air_metric_t orden[9] = {
         AIR_CO2,  AIR_TEMP, AIR_HUM,
@@ -419,22 +419,21 @@ static void build_idle(lv_obj_t *scr)
         AIR_PM10, AIR_VOC,  AIR_NOX,
     };
     for (int i = 0; i < 9; i++) {
-        const int dx = (i % 3 - 1) * 112;
+        const int dx = (i % 3 - 1) * 122 + UI_X_OFFSET;
         // Zeilenabstand so gewaehlt, dass die unterste Zeile nicht mit der Akkuanzeige kollidiert
-        const int dy = -40 + (i / 3) * 64;
-        lv_obj_t *name = make_label(s_idle_panel, &ui_font_14, 0x64748b);
+        const int dy = -36 + (i / 3) * 64;
+        lv_obj_t *name = make_label(s_idle_panel, &ui_font_16, 0x64748b);
         lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, 0);
         lv_label_set_text(name, i18n_metric(orden[i]));
         lv_obj_align(name, LV_ALIGN_CENTER, dx, dy);
 
-        s_idle_val[orden[i]] = make_label(s_idle_panel, &ui_font_22, 0xffffff);
+        s_idle_val[orden[i]] = make_label(s_idle_panel, &ui_font_28, 0xffffff);
         lv_obj_set_style_text_align(s_idle_val[orden[i]], LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_align(s_idle_val[orden[i]], LV_ALIGN_CENTER, dx, dy + 24);
     }
 }
 
-// Misma receta que la pagina de CO2: grafica a sangre por debajo, anillo
-// encima. En ambar, que es el color que ya usan los avisos.
+// Gleicher Aufbau wie CO2: Diagramm vollflaechig im Hintergrund, Ring darueber (in Bernstein).
 static void build_noise(lv_obj_t *tile)
 {
     chart_create(&s_noise_chart, &s_noise_ser, tile, 430, 90, 0xfacc15);
