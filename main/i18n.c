@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-static lang_t s_lang = LANG_ES;
+static lang_t s_lang = LANG_DE;
 
 // Filas: el orden de str_id_t. Columnas: ES, EN, DE.
 //
