@@ -15,12 +15,14 @@
 static const char *TAG = "display";
 
 #define LCD_CMD_BRIGHTNESS 0x51 // write display brightness (MIPI DCS)
+#define LCD_CMD_WRCTRLD    0x53 // write CTRL display (BCTRL enable)
 
 static lv_display_t *s_disp;
 static i2c_master_bus_handle_t s_i2c_bus;
 static esp_lcd_panel_io_handle_t s_panel_io;
 static esp_lcd_panel_handle_t s_panel;
 static bool s_disp_on = true;
+static bool s_bctrl_init = false;
 
 // Los AMOLED QSPI (CO5300) exigen ventanas de volcado alineadas a 2 px; con
 // bordes impares el panel pinta basura (lineas verdes) en los limites del
@@ -224,5 +226,13 @@ void display_set_brightness(uint8_t level)
         esp_lcd_panel_disp_on_off(s_panel, true);
         s_disp_on = true;
     }
+
+    // El controlador CO5300 requiere habilitar BCTRL (bit 5) en 0x53
+    // para que el comando 0x51 regule el brillo en lugar de ser ignorado.
+    if (!s_bctrl_init) {
+        esp_lcd_panel_io_tx_param(s_panel_io, LCD_CMD_WRCTRLD, (uint8_t[]){0x20}, 1);
+        s_bctrl_init = true;
+    }
+
     esp_lcd_panel_io_tx_param(s_panel_io, LCD_CMD_BRIGHTNESS, (uint8_t[]){level}, 1);
 }
