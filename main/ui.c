@@ -17,8 +17,9 @@
 #define RING_D 446
 #define RING_INNER_R ((RING_D) / 2 - 22)
 
-#define FADE_DIM_MS  500
-#define FADE_WAKE_MS 400
+#define FADE_DIM_MS     500
+#define FADE_WAKE_MS    250
+#define BURNIN_PERIOD_S 60
 
 enum { PAGE_SUMMARY = 0, PAGE_CO2, PAGE_PM, PAGE_GAS, PAGE_CLIMATE, PAGE_NOISE };
 
@@ -33,6 +34,7 @@ static air_history_t *s_hist;
 static ui_config_t s_cfg;
 static void (*s_set_brightness)(uint8_t);
 
+static lv_obj_t *s_root;
 static lv_obj_t *s_tv;
 static lv_obj_t *s_status_time;
 static lv_obj_t *s_status_msg;
@@ -72,11 +74,22 @@ static lv_chart_series_t *s_gas_ser_voc, *s_gas_ser_nox;
 static uint32_t s_idle_s;
 static bool s_dimmed;
 static bool s_on_battery;
+static uint32_t s_burnin_s;
+static uint8_t s_burnin_step;
 #define UI_BATTERY_TIMEOUT_S 30
 static air_sample_t s_last;
 
 // ------------------------------------------------------------------ helpers
 static lv_color_t col(uint32_t rgb) { return lv_color_hex(rgb); }
+
+static void burnin_reset(void)
+{
+    s_burnin_s = 0;
+    if (s_burnin_step != 0) {
+        s_burnin_step = 0;
+        if (s_root) lv_obj_set_pos(s_root, 0, 0);
+    }
+}
 
 static void apply_brightness_immediate(uint8_t level)
 {
@@ -385,9 +398,9 @@ static void build_climate(lv_obj_t *tile)
 }
 
 // ------------------------------------------------------------------ Status & Ruheansicht
-static void build_idle(lv_obj_t *scr)
+static void build_idle(lv_obj_t *parent)
 {
-    s_idle_panel = plain(scr);
+    s_idle_panel = plain(parent);
     lv_obj_set_size(s_idle_panel, SCR_W, SCR_H);
     lv_obj_center(s_idle_panel);
     lv_obj_set_hidden(s_idle_panel, true);
@@ -438,22 +451,22 @@ static void build_noise(lv_obj_t *tile)
     lv_obj_align(s_noise_level, LV_ALIGN_CENTER, UI_X_OFFSET, 48);
 }
 
-static void build_chrome(lv_obj_t *scr)
+static void build_chrome(lv_obj_t *parent)
 {
-    s_status_time = make_label(scr, &ui_font_48, 0xe2e8f0);
+    s_status_time = make_label(parent, &ui_font_48, 0xe2e8f0);
     lv_obj_align(s_status_time, LV_ALIGN_CENTER, UI_X_OFFSET, -170);
 
-    s_status_net = make_label(scr, &ui_font_16, 0x475569);
+    s_status_net = make_label(parent, &ui_font_16, 0x475569);
     lv_obj_align(s_status_net, LV_ALIGN_CENTER, UI_X_OFFSET, -128);
 
-    s_status_bat = make_label(scr, &ui_font_16, 0x94a3b8);
+    s_status_bat = make_label(parent, &ui_font_16, 0x94a3b8);
     lv_obj_align(s_status_bat, LV_ALIGN_CENTER, UI_X_OFFSET, 156);
 
-    s_status_msg = make_label(scr, &ui_font_16, 0xfacc15);
+    s_status_msg = make_label(parent, &ui_font_16, 0xfacc15);
     lv_obj_align(s_status_msg, LV_ALIGN_BOTTOM_MID, UI_X_OFFSET, -52);
 
     for (int i = 0; i < UI_PAGE_COUNT; i++) {
-        s_dots[i] = lv_obj_create(scr);
+        s_dots[i] = lv_obj_create(parent);
         lv_obj_remove_style_all(s_dots[i]);
         lv_obj_set_size(s_dots[i], 7, 7);
         lv_obj_set_style_radius(s_dots[i], 4, 0);
@@ -515,7 +528,14 @@ void ui_init(air_history_t *hist, const ui_config_t *cfg,
     lv_obj_add_event_cb(scr, on_activity, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(scr, on_activity, LV_EVENT_CLICKED, NULL);
 
-    s_tv = lv_tileview_create(scr);
+    // Gemeinsamer Container fuer alle UI-Elemente, damit Pixel-Shift (Burn-in-Schutz)
+    // die gesamte Ansicht sauber um +-3 px verschieben kann.
+    s_root = plain(scr);
+    lv_obj_set_size(s_root, SCR_W, SCR_H);
+    lv_obj_set_pos(s_root, 0, 0);
+    lv_obj_set_event_bubble(s_root, true);
+
+    s_tv = lv_tileview_create(s_root);
     lv_obj_set_size(s_tv, SCR_W, SCR_H);
     lv_obj_set_style_bg_opa(s_tv, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_tv, 0, 0);
@@ -553,8 +573,8 @@ void ui_init(air_history_t *hist, const ui_config_t *cfg,
         s_cols = 1;
     }
 
-    build_idle(scr);
-    build_chrome(scr);
+    build_idle(s_root);
+    build_chrome(s_root);
     layout_dots();
     update_dots();
 
@@ -568,6 +588,29 @@ void ui_init(air_history_t *hist, const ui_config_t *cfg,
     lv_obj_set_style_bg_opa(s_dim_overlay, LV_OPA_TRANSP, 0);
 
     apply_brightness_immediate(s_cfg.brightness);
+}
+
+void ui_apply_config(const ui_config_t *cfg)
+{
+    if (!cfg) return;
+    s_cfg.brightness = cfg->brightness;
+    s_cfg.night_brightness = cfg->night_brightness;
+    s_cfg.screen_timeout_s = cfg->screen_timeout_s;
+    s_cfg.chart_span_min = cfg->chart_span_min;
+    s_cfg.burnin_idle = cfg->burnin_idle;
+    s_cfg.burnin_active = cfg->burnin_active;
+
+    if (s_dimmed && !s_on_battery && s_cfg.screen_timeout_s == 0) {
+        ui_wake();
+    } else if (s_dimmed) {
+        fade_brightness(s_on_battery ? 0 : s_cfg.night_brightness, 0);
+    } else {
+        fade_brightness(s_cfg.brightness, 0);
+    }
+
+    const bool shift_en = (s_cur_brightness > 0) &&
+                          (s_dimmed ? s_cfg.burnin_idle : s_cfg.burnin_active);
+    if (!shift_en) burnin_reset();
 }
 
 void ui_update(const air_sample_t *s)
@@ -763,6 +806,9 @@ void ui_wake(void)
         s_dimmed = false;
         fade_brightness(s_cfg.brightness, FADE_WAKE_MS);
     }
+    if (!s_cfg.burnin_active) {
+        burnin_reset();
+    }
 }
 
 void ui_set_ip(const char *ip)
@@ -791,6 +837,23 @@ void ui_tick_1s(void)
             s_idle_shown = true;
             lv_obj_set_hidden(s_tv, true);
             lv_obj_set_hidden(s_idle_panel, false);
+        }
+    }
+
+    // AMOLED Burn-in-Schutz (Pixel-Shift +-3 px alle 60 s)
+    const bool shift_en = (s_cur_brightness > 0) &&
+                          (s_dimmed ? s_cfg.burnin_idle : s_cfg.burnin_active);
+    if (!shift_en) {
+        burnin_reset();
+    } else if (++s_burnin_s >= BURNIN_PERIOD_S) {
+        static const int8_t OFF[][2] = {
+            { 0,  0}, { 3,  0}, { 3,  3}, { 0,  3},
+            {-3,  3}, {-3,  0}, {-3, -3}, { 0, -3}, { 3, -3},
+        };
+        s_burnin_s = 0;
+        s_burnin_step = (s_burnin_step + 1) % (sizeof(OFF) / sizeof(OFF[0]));
+        if (s_root) {
+            lv_obj_set_pos(s_root, OFF[s_burnin_step][0], OFF[s_burnin_step][1]);
         }
     }
 }

@@ -124,6 +124,9 @@ static const char k_page[] =
 "<option value=720>12 Stunden</option><option value=1440>24 Stunden</option>\n"
 "</select></div>\n"
 "</div>\n"
+"<label>Burn-in-Schutz (Pixel-Shift ±3 px / min)</label>\n"
+"<div class=pg><input type=checkbox id=bi_idle><span>Im gedimmten Modus (empfohlen)</span></div>\n"
+"<div class=pg><input type=checkbox id=bi_act><span>Im ungedimmten Modus</span></div>\n"
 "<label>Sichtbare Seiten</label>\n"
 "<div class=pg><input type=checkbox id=pg0><span>Übersicht</span></div>\n"
 "<div class=pg><input type=checkbox id=pg1><span>CO2</span></div>\n"
@@ -157,7 +160,7 @@ static const char k_page[] =
 "<input name=alarm_volume type=range min=0 max=100 oninput=vivo(this)>\n"
 "<div class=hint>Der Schwellenwert für die Entwarnung muss NIEDRIGER sein als der für den Alarm (Hysterese verhindert Dauerpiepen). Falsche Werte werden automatisch korrigiert.</div>\n"
 "\n"
-"<button type=submit>Speichern und neu starten</button></form><div id=msg></div></div>\n"
+"<button type=submit>Speichern</button></form><div id=msg></div></div>\n"
 "\n"
 "<h2>Wartung</h2><div class=card>\n"
 "<div class=row>\n"
@@ -209,6 +212,8 @@ static const char k_page[] =
 "async function load(){const c=await(await fetch('/api/settings')).json();\n"
 " for(const [k,v] of Object.entries(c)){\n"
 "  if(k=='pages_mask'){for(let i=0;i<6;i++)document.getElementById('pg'+i).checked=!!(v>>i&1);continue}\n"
+"  if(k=='burnin_idle'){document.getElementById('bi_idle').checked=!!v;continue}\n"
+"  if(k=='burnin_active'){document.getElementById('bi_act').checked=!!v;continue}\n"
 "  const e=document.forms.f[k];if(!e)continue;\n"
 "  e.value=v;\n"
 "  if(e.type=='select-one'&&e.selectedIndex<0){\n"
@@ -220,8 +225,11 @@ static const char k_page[] =
 " const d=Object.fromEntries(new FormData(ev.target));\n"
 " let m=0;for(let i=0;i<6;i++)if(document.getElementById('pg'+i).checked)m|=1<<i;\n"
 " d.pages_mask=m||1;\n"
+" d.burnin_idle=document.getElementById('bi_idle').checked?1:0;\n"
+" d.burnin_active=document.getElementById('bi_act').checked?1:0;\n"
 " const r=await fetch('/api/settings',{method:'POST',body:JSON.stringify(d)});\n"
-" document.getElementById('msg').textContent=r.ok?'Gespeichert. Neustart...':'Fehler beim Speichern'};\n"
+" const t=r.ok?await r.text():'';\n"
+" document.getElementById('msg').textContent=r.ok?(t=='reboot'?'Gespeichert. Neustart...':'Gespeichert und sofort übernommen.'):'Fehler beim Speichern'};\n"
 "async function post(u){const r=await fetch(u,{method:'POST'});\n"
 " document.getElementById('msg').textContent=r.ok?'Fertig':'Fehler'}\n"
 "async function recal(){const p=document.getElementById('frc').value;\n"
@@ -238,7 +246,8 @@ static const char k_page[] =
 " const m=document.getElementById('bkmsg');if(!f){m.textContent='Wähle eine Datei';return}\n"
 " let d;try{d=JSON.parse(await f.text())}catch(e){m.textContent='Ungültiges JSON';return}\n"
 " const r=await fetch('/api/settings',{method:'POST',body:JSON.stringify(d)});\n"
-" m.textContent=r.ok?'Wiederhergestellt. Neustart...':'Fehler beim Wiederherstellen'}\n"
+" const t=r.ok?await r.text():'';\n"
+" m.textContent=r.ok?(t=='reboot'?'Wiederhergestellt. Neustart...':'Wiederhergestellt und sofort übernommen.'):'Fehler beim Wiederherstellen'}\n"
 "load();refresh();setInterval(refresh,5000);\n"
 "</script></html>\n";
 
@@ -324,7 +333,7 @@ static esp_err_t h_state(httpd_req_t *req)
 static esp_err_t h_settings_get(httpd_req_t *req)
 {
     const settings_t *c = settings_get();
-    char json[900];
+    char json[1024];
     int n = snprintf(json, sizeof(json),
         "{\"wifi_ssid\":\"%s\",\"mqtt_uri\":\"%s\",\"mqtt_user\":\"%s\","
         "\"mqtt_prefix\":\"%s\",\"device_name\":\"%s\",\"lang\":\"%s\","
@@ -333,13 +342,15 @@ static esp_err_t h_settings_get(httpd_req_t *req)
         "\"page_dwell_s\":%u,\"chart_span_min\":%u,\"pages_mask\":%u,"
         "\"temp_offset\":%.1f,\"altitude_m\":%u,\"co2_asc\":%d,"
         "\"alarm_enabled\":%d,\"alarm_co2_ppm\":%u,\"alarm_clear_ppm\":%u,"
-        "\"alarm_volume\":%u,\"noise_offset_db\":%d}",
+        "\"alarm_volume\":%u,\"noise_offset_db\":%d,"
+        "\"burnin_idle\":%d,\"burnin_active\":%d}",
         c->wifi_ssid, c->mqtt_uri, c->mqtt_user, c->mqtt_prefix, c->device_name, c->lang,
         c->tz, c->ntp, c->brightness, c->night_brightness, c->screen_timeout_s,
         c->page_dwell_s, c->chart_span_min, c->pages_mask,
         c->temp_offset_dc / 10.0f, c->altitude_m, c->co2_asc ? 1 : 0,
         c->alarm_enabled ? 1 : 0, c->alarm_co2_ppm, c->alarm_clear_ppm,
-        c->alarm_volume, c->noise_offset_db);
+        c->alarm_volume, c->noise_offset_db,
+        c->burnin_idle ? 1 : 0, c->burnin_active ? 1 : 0);
 
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, json, n);
@@ -397,6 +408,8 @@ static esp_err_t h_settings_post(httpd_req_t *req)
     }
 
     settings_t *c = settings_get();
+    const settings_t prev = *c;
+
     copy_str(root, "wifi_ssid", c->wifi_ssid, sizeof(c->wifi_ssid), false);
     copy_str(root, "wifi_pass", c->wifi_pass, sizeof(c->wifi_pass), true);
     copy_str(root, "mqtt_uri", c->mqtt_uri, sizeof(c->mqtt_uri), false);
@@ -422,7 +435,9 @@ static esp_err_t h_settings_post(httpd_req_t *req)
     if (get_num(root, "alarm_co2_ppm", &d))    c->alarm_co2_ppm = (uint16_t)(d < 400 ? 400 : (d > 5000 ? 5000 : d));
     if (get_num(root, "alarm_clear_ppm", &d))  c->alarm_clear_ppm = (uint16_t)(d < 400 ? 400 : (d > 5000 ? 5000 : d));
     if (get_num(root, "alarm_volume", &d))     c->alarm_volume = (uint8_t)(d < 0 ? 0 : (d > 100 ? 100 : d));
-    if (get_num(root, "noise_offset_db", &d)) c->noise_offset_db = (int16_t)(d < 0 ? 0 : (d > 200 ? 200 : d));
+    if (get_num(root, "noise_offset_db", &d))  c->noise_offset_db = (int16_t)(d < 0 ? 0 : (d > 200 ? 200 : d));
+    if (get_num(root, "burnin_idle", &d))      c->burnin_idle = (d != 0);
+    if (get_num(root, "burnin_active", &d))    c->burnin_active = (d != 0);
     cJSON_Delete(root);
 
     if (c->alarm_clear_ppm >= c->alarm_co2_ppm) {
@@ -431,8 +446,18 @@ static esp_err_t h_settings_post(httpd_req_t *req)
                  c->alarm_clear_ppm);
     }
 
+    const ui_config_t uicfg = {
+        .page_dwell_s = c->page_dwell_s,
+        .pages_mask = c->pages_mask,
+        .chart_span_min = c->chart_span_min,
+        .brightness = c->brightness,
+        .night_brightness = c->night_brightness,
+        .screen_timeout_s = c->screen_timeout_s,
+        .burnin_idle = c->burnin_idle,
+        .burnin_active = c->burnin_active,
+    };
     if (lvgl_port_lock(50)) {
-        ui_set_live_brightness(c->brightness);
+        ui_apply_config(&uicfg);
         lvgl_port_unlock();
     } else {
         display_set_brightness(c->brightness);
@@ -444,8 +469,27 @@ static esp_err_t h_settings_post(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no se pudo guardar");
         return ESP_FAIL;
     }
-    httpd_resp_sendstr(req, "ok");
-    xTaskCreate(reboot_task, "reboot", 2048, NULL, 5, NULL);
+
+    const bool need_reboot =
+        strcmp(prev.wifi_ssid, c->wifi_ssid) != 0 ||
+        strcmp(prev.wifi_pass, c->wifi_pass) != 0 ||
+        strcmp(prev.mqtt_uri, c->mqtt_uri) != 0 ||
+        strcmp(prev.mqtt_user, c->mqtt_user) != 0 ||
+        strcmp(prev.mqtt_pass, c->mqtt_pass) != 0 ||
+        strcmp(prev.mqtt_prefix, c->mqtt_prefix) != 0 ||
+        strcmp(prev.device_name, c->device_name) != 0 ||
+        strcmp(prev.lang, c->lang) != 0 ||
+        strcmp(prev.tz, c->tz) != 0 ||
+        strcmp(prev.ntp, c->ntp) != 0 ||
+        prev.pages_mask != c->pages_mask ||
+        prev.temp_offset_dc != c->temp_offset_dc ||
+        prev.altitude_m != c->altitude_m ||
+        prev.co2_asc != c->co2_asc;
+
+    httpd_resp_sendstr(req, need_reboot ? "reboot" : "ok");
+    if (need_reboot) {
+        xTaskCreate(reboot_task, "reboot", 2048, NULL, 5, NULL);
+    }
     return ESP_OK;
 }
 
@@ -461,7 +505,7 @@ static esp_err_t h_backup(httpd_req_t *req)
     }
 
     const settings_t *c = settings_get();
-    char json[900];
+    char json[1024];
     int n = snprintf(json, sizeof(json),
         "{\"wifi_ssid\":\"%s\",\"mqtt_uri\":\"%s\",\"mqtt_user\":\"%s\","
         "\"mqtt_prefix\":\"%s\",\"device_name\":\"%s\",\"lang\":\"%s\","
@@ -469,12 +513,14 @@ static esp_err_t h_backup(httpd_req_t *req)
         "\"night_brightness\":%u,\"screen_timeout_s\":%u,\"chart_span_min\":%u,"
         "\"pages_mask\":%u,\"temp_offset\":%.1f,\"altitude_m\":%u,"
         "\"co2_asc\":%d,\"alarm_enabled\":%d,\"alarm_co2_ppm\":%u,"
-        "\"alarm_clear_ppm\":%u,\"alarm_volume\":%u",
+        "\"alarm_clear_ppm\":%u,\"alarm_volume\":%u,"
+        "\"burnin_idle\":%d,\"burnin_active\":%d",
         c->wifi_ssid, c->mqtt_uri, c->mqtt_user, c->mqtt_prefix, c->device_name,
         c->lang, c->tz, c->ntp, c->brightness, c->night_brightness,
         c->screen_timeout_s, c->chart_span_min, c->pages_mask,
         c->temp_offset_dc / 10.0, c->altitude_m, c->co2_asc,
-        c->alarm_enabled, c->alarm_co2_ppm, c->alarm_clear_ppm, c->alarm_volume);
+        c->alarm_enabled, c->alarm_co2_ppm, c->alarm_clear_ppm, c->alarm_volume,
+        c->burnin_idle ? 1 : 0, c->burnin_active ? 1 : 0);
 
     if (con_secretos) {
         n += snprintf(json + n, sizeof(json) - n,

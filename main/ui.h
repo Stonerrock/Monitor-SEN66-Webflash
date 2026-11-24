@@ -15,11 +15,14 @@ typedef struct {
     uint8_t brightness;
     uint8_t night_brightness;
     uint16_t screen_timeout_s;
+    bool burnin_idle;
+    bool burnin_active;
 } ui_config_t;
 
 void ui_init(air_history_t *hist, const ui_config_t *cfg,
              void (*set_brightness)(uint8_t));
 
+void ui_apply_config(const ui_config_t *cfg);
 void ui_update(const air_sample_t *s);
 
 void ui_set_status(const char *time_str, bool wifi, bool mqtt, const char *msg,
