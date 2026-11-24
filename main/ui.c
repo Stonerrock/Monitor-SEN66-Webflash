@@ -17,6 +17,9 @@
 #define RING_D 446
 #define RING_INNER_R ((RING_D) / 2 - 22)
 
+#define FADE_DIM_MS  500
+#define FADE_WAKE_MS 400
+
 enum { PAGE_SUMMARY = 0, PAGE_CO2, PAGE_PM, PAGE_GAS, PAGE_CLIMATE, PAGE_NOISE };
 
 typedef struct {
@@ -36,6 +39,7 @@ static lv_obj_t *s_status_msg;
 static lv_obj_t *s_status_net;
 static lv_obj_t *s_status_bat;
 static lv_obj_t *s_dim_overlay;
+static uint8_t s_cur_brightness = 255;
 
 static lv_obj_t *s_idle_panel;
 static lv_obj_t *s_idle_val[AIR_METRIC_COUNT];
@@ -74,8 +78,9 @@ static air_sample_t s_last;
 // ------------------------------------------------------------------ helpers
 static lv_color_t col(uint32_t rgb) { return lv_color_hex(rgb); }
 
-static void apply_brightness(uint8_t level)
+static void apply_brightness_immediate(uint8_t level)
 {
+    s_cur_brightness = level;
     if (s_dim_overlay) {
         lv_opa_t opa = (level == 0) ? LV_OPA_COVER : (lv_opa_t)(255 - level);
         lv_obj_set_style_bg_opa(s_dim_overlay, opa, 0);
@@ -83,6 +88,34 @@ static void apply_brightness(uint8_t level)
     if (s_set_brightness) {
         s_set_brightness(level);
     }
+}
+
+static void fade_exec_cb(void *var, int32_t v)
+{
+    (void)var;
+    if (v < 0) v = 0;
+    if (v > 255) v = 255;
+    uint8_t lvl = (uint8_t)v;
+    if (lvl == s_cur_brightness) return;
+    apply_brightness_immediate(lvl);
+}
+
+static void fade_brightness(uint8_t target, uint32_t duration_ms)
+{
+    lv_anim_delete(&s_cur_brightness, fade_exec_cb);
+    if (duration_ms == 0 || s_cur_brightness == target) {
+        apply_brightness_immediate(target);
+        return;
+    }
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, &s_cur_brightness);
+    lv_anim_set_exec_cb(&a, fade_exec_cb);
+    lv_anim_set_values(&a, s_cur_brightness, target);
+    lv_anim_set_duration(&a, duration_ms);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+    lv_anim_start(&a);
 }
 
 static void fmt_value(char *buf, size_t len, air_metric_t m, float v)
@@ -95,7 +128,7 @@ static lv_obj_t *plain(lv_obj_t *parent)
 {
     lv_obj_t *o = lv_obj_create(parent);
     lv_obj_remove_style_all(o);
-    lv_obj_remove_flag(o, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(o, false);
     return o;
 }
 
@@ -130,7 +163,7 @@ static void gauge_create(gauge_t *g, lv_obj_t *parent, int size, int thickness,
     lv_arc_set_range(g->arc, 0, 1000);
     lv_arc_set_value(g->arc, 0);
     lv_obj_remove_style(g->arc, NULL, LV_PART_KNOB);
-    lv_obj_remove_flag(g->arc, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_clickable(g->arc, false);
     lv_obj_set_style_arc_width(g->arc, thickness, LV_PART_MAIN);
     lv_obj_set_style_arc_width(g->arc, thickness, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(g->arc, col(0x1e293b), LV_PART_MAIN);
@@ -185,7 +218,7 @@ static void chart_create(lv_obj_t **out_chart, lv_chart_series_t **out_ser,
     lv_obj_set_style_line_width(c, 2, LV_PART_ITEMS);
     lv_obj_set_style_width(c, 0, LV_PART_INDICATOR);
     lv_obj_set_style_height(c, 0, LV_PART_INDICATOR);
-    lv_obj_remove_flag(c, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_clickable(c, false);
     *out_ser = lv_chart_add_series(c, col(color), LV_CHART_AXIS_PRIMARY_Y);
     *out_chart = c;
 }
@@ -234,9 +267,9 @@ static void build_summary(lv_obj_t *tile)
 {
     gauge_create(&s_g_summary, tile, RING_D, 22,
                  &ui_font_48, &ui_font_28);
-    lv_obj_add_flag(s_g_summary.value, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_g_summary.unit, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_g_summary.caption, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s_g_summary.value, true);
+    lv_obj_set_hidden(s_g_summary.unit, true);
+    lv_obj_set_hidden(s_g_summary.caption, true);
     lv_obj_set_style_arc_width(s_g_summary.arc, 22, LV_PART_INDICATOR);
 
     s_sum_center = make_label(tile, &ui_font_48, 0xffffff);
@@ -357,8 +390,8 @@ static void build_idle(lv_obj_t *scr)
     s_idle_panel = plain(scr);
     lv_obj_set_size(s_idle_panel, SCR_W, SCR_H);
     lv_obj_center(s_idle_panel);
-    lv_obj_add_flag(s_idle_panel, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_remove_flag(s_idle_panel, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_hidden(s_idle_panel, true);
+    lv_obj_set_clickable(s_idle_panel, false);
 
     s_idle_level = make_label(s_idle_panel, &ui_font_48, 0xffffff);
     lv_obj_align(s_idle_level, LV_ALIGN_CENTER, UI_X_OFFSET, -100);
@@ -426,7 +459,7 @@ static void build_chrome(lv_obj_t *scr)
         lv_obj_set_style_radius(s_dots[i], 4, 0);
         lv_obj_set_style_bg_opa(s_dots[i], LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(s_dots[i], col(0x334155), 0);
-        lv_obj_add_flag(s_dots[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(s_dots[i], true);
     }
 }
 
@@ -436,7 +469,7 @@ static void layout_dots(void)
     const int x0 = -(s_cols - 1) * gap / 2 + UI_X_OFFSET;
     for (int c = 0; c < s_cols; c++) {
         lv_obj_t *d = s_dots[c];
-        lv_obj_remove_flag(d, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(d, false);
         lv_obj_align(d, LV_ALIGN_BOTTOM_MID, x0 + c * gap, -28);
     }
 }
@@ -496,8 +529,8 @@ void ui_init(air_history_t *hist, const ui_config_t *cfg,
         s_page_col[p] = -1;
         if (!((s_cfg.pages_mask >> p) & 1)) continue;
         lv_obj_t *tile = lv_tileview_add_tile(s_tv, s_cols, 0, LV_DIR_HOR);
-        lv_obj_remove_flag(tile, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_add_flag(tile, LV_OBJ_FLAG_EVENT_BUBBLE);
+        lv_obj_set_scrollable(tile, false);
+        lv_obj_set_event_bubble(tile, true);
         switch (p) {
         case PAGE_SUMMARY: build_summary(tile); break;
         case PAGE_CO2:     build_co2(tile);     break;
@@ -513,7 +546,7 @@ void ui_init(air_history_t *hist, const ui_config_t *cfg,
     }
     if (s_cols == 0) {
         lv_obj_t *tile = lv_tileview_add_tile(s_tv, 0, 0, LV_DIR_HOR);
-        lv_obj_add_flag(tile, LV_OBJ_FLAG_EVENT_BUBBLE);
+        lv_obj_set_event_bubble(tile, true);
         build_summary(tile);
         s_page_col[PAGE_SUMMARY] = 0;
         s_col_page[0] = PAGE_SUMMARY;
@@ -525,17 +558,16 @@ void ui_init(air_history_t *hist, const ui_config_t *cfg,
     layout_dots();
     update_dots();
 
-    // Software-Dimming-Overlay auf lv_layer_top(): dunkelt AMOLED-Pixel stufenlos ab,
-    // selbst wenn das Panel den Hardware-Registerbefehl 0x51 ignoriert.
+    // Software-Dimming-Overlay auf lv_layer_top() fuer stufenloses Smooth Fading.
     s_dim_overlay = lv_obj_create(lv_layer_top());
     lv_obj_set_size(s_dim_overlay, SCR_W, SCR_H);
     lv_obj_set_style_bg_color(s_dim_overlay, lv_color_black(), 0);
     lv_obj_set_style_border_width(s_dim_overlay, 0, 0);
     lv_obj_set_style_radius(s_dim_overlay, 0, 0);
-    lv_obj_remove_flag(s_dim_overlay, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_clickable(s_dim_overlay, false);
     lv_obj_set_style_bg_opa(s_dim_overlay, LV_OPA_TRANSP, 0);
 
-    apply_brightness(s_cfg.brightness);
+    apply_brightness_immediate(s_cfg.brightness);
 }
 
 void ui_update(const air_sample_t *s)
@@ -715,7 +747,7 @@ void ui_goto_page(int page)
 
 void ui_set_live_brightness(uint8_t level)
 {
-    apply_brightness(level);
+    fade_brightness(level, 0);
 }
 
 void ui_wake(void)
@@ -724,12 +756,12 @@ void ui_wake(void)
     s_idle_s = 0;
     if (s_idle_shown) {
         s_idle_shown = false;
-        lv_obj_add_flag(s_idle_panel, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(s_tv, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(s_idle_panel, true);
+        lv_obj_set_hidden(s_tv, false);
     }
     if (s_dimmed) {
         s_dimmed = false;
-        apply_brightness(s_cfg.brightness);
+        fade_brightness(s_cfg.brightness, FADE_WAKE_MS);
     }
 }
 
@@ -754,11 +786,11 @@ void ui_tick_1s(void)
         ui_wake();
     } else if (timeout && !s_dimmed && s_idle_s >= timeout) {
         s_dimmed = true;
-        apply_brightness(dim_to);
+        fade_brightness(dim_to, FADE_DIM_MS);
         if (!s_on_battery && s_idle_panel) {
             s_idle_shown = true;
-            lv_obj_add_flag(s_tv, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_remove_flag(s_idle_panel, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_hidden(s_tv, true);
+            lv_obj_set_hidden(s_idle_panel, false);
         }
     }
 }
