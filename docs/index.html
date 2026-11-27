@@ -8,6 +8,18 @@
 </head>
 <body style="font-family: sans-serif; padding: 2rem;">
   <h1>Monitor SEN66 – Firmware installieren</h1>
+  <p>Aktuelle Version auf dem Server: <strong id="fw-version">wird geladen...</strong></p>
   <esp-web-install-button manifest="./manifest.json"></esp-web-install-button>
+
+  <script>
+    fetch('./manifest.json?t=' + Date.now())
+      .then(r => r.json())
+      .then(data => {
+        document.getElementById('fw-version').textContent = data.version || 'unbekannt';
+      })
+      .catch(() => {
+        document.getElementById('fw-version').textContent = 'Fehler beim Laden';
+      });
+  </script>
 </body>
 </html>
