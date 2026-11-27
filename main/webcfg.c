@@ -20,6 +20,7 @@
 #include "esp_check.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "esp_lvgl_port.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -41,8 +42,6 @@ void webcfg_set_co2_recal(webcfg_recal_fn request, webcfg_recal_status_fn status
     s_recal_status = status;
 }
 
-// ------------------------------------------------------------------- pagina
-// Una sola pagina, sin dependencias externas (no hay internet en el portal).
 static const char k_page[] =
 "<!doctype html><html lang=de><meta charset=utf-8>\n"
 "<meta name=viewport content='width=device-width,initial-scale=1'>\n"
@@ -116,19 +115,18 @@ static const char k_page[] =
 "<input name=brightness type=range min=1 max=255 oninput=vivo(this)>\n"
 "<label>Gedimmte Helligkeit <span class=val id=nv></span></label>\n"
 "<input name=night_brightness type=range min=0 max=255 oninput=vivo(this)>\n"
-"<div class=hint>Änderungen werden sofort sichtbar; dauerhaft gespeichert wird mit Klick auf Speichern.</div>\n"
+"<div class=hint>Änderungen werden sofort sichtbar (0 = Display komplett aus); dauerhaft gespeichert wird mit Klick auf Speichern.</div>\n"
 "<div class=grid>\n"
-"<div><label>Abdunkeln nach</label><select name=screen_timeout_s>\n"
-"<option value=0>Nie</option><option value=30>30 Sekunden</option>\n"
-"<option value=45>45 Sekunden</option><option value=60>1 Minute</option>\n"
-"<option value=300>5 Minuten</option><option value=900>15 Minuten</option>\n"
-"</select></div>\n"
+"<div><label>Abdunkeln nach (Sekunden, 0 = Nie)</label><input name=screen_timeout_s type=number min=0 max=86400></div>\n"
 "<div><label>Diagramm-Zeitfenster</label><select name=chart_span_min>\n"
 "<option value=30>30 Minuten</option><option value=60>1 Stunde</option>\n"
 "<option value=180>3 Stunden</option><option value=360>6 Stunden</option>\n"
 "<option value=720>12 Stunden</option><option value=1440>24 Stunden</option>\n"
 "</select></div>\n"
 "</div>\n"
+"<label>Burn-in-Schutz (Pixel-Shift ±3 px / min)</label>\n"
+"<div class=pg><input type=checkbox id=bi_idle><span>Im gedimmten Modus (empfohlen)</span></div>\n"
+"<div class=pg><input type=checkbox id=bi_act><span>Im ungedimmten Modus</span></div>\n"
 "<label>Sichtbare Seiten</label>\n"
 "<div class=pg><input type=checkbox id=pg0><span>Übersicht</span></div>\n"
 "<div class=pg><input type=checkbox id=pg1><span>CO2</span></div>\n"
@@ -162,7 +160,7 @@ static const char k_page[] =
 "<input name=alarm_volume type=range min=0 max=100 oninput=vivo(this)>\n"
 "<div class=hint>Der Schwellenwert für die Entwarnung muss NIEDRIGER sein als der für den Alarm (Hysterese verhindert Dauerpiepen). Falsche Werte werden automatisch korrigiert.</div>\n"
 "\n"
-"<button type=submit>Speichern und neu starten</button></form><div id=msg></div></div>\n"
+"<button type=submit>Speichern</button></form><div id=msg></div></div>\n"
 "\n"
 "<h2>Wartung</h2><div class=card>\n"
 "<div class=row>\n"
@@ -199,7 +197,7 @@ static const char k_page[] =
 "function vivo(e){\n"
 " const s={brightness:'bv',night_brightness:'nv',alarm_volume:'av'}[e.name];\n"
 " if(s)document.getElementById(s).textContent=e.value;\n"
-" if(e.name=='brightness')fetch('/api/brightness?v='+e.value,{method:'POST'});\n"
+" if(e.name=='brightness'||e.name=='night_brightness')fetch('/api/brightness?v='+e.value,{method:'POST'});\n"
 "}\n"
 "async function refresh(){const s=await(await fetch('/api/state')).json();\n"
 " document.getElementById('sub').textContent=s.name+' - v'+s.version+' - '+s.id+' - '+s.ip;\n"
@@ -214,6 +212,8 @@ static const char k_page[] =
 "async function load(){const c=await(await fetch('/api/settings')).json();\n"
 " for(const [k,v] of Object.entries(c)){\n"
 "  if(k=='pages_mask'){for(let i=0;i<6;i++)document.getElementById('pg'+i).checked=!!(v>>i&1);continue}\n"
+"  if(k=='burnin_idle'){document.getElementById('bi_idle').checked=!!v;continue}\n"
+"  if(k=='burnin_active'){document.getElementById('bi_act').checked=!!v;continue}\n"
 "  const e=document.forms.f[k];if(!e)continue;\n"
 "  e.value=v;\n"
 "  if(e.type=='select-one'&&e.selectedIndex<0){\n"
@@ -225,8 +225,11 @@ static const char k_page[] =
 " const d=Object.fromEntries(new FormData(ev.target));\n"
 " let m=0;for(let i=0;i<6;i++)if(document.getElementById('pg'+i).checked)m|=1<<i;\n"
 " d.pages_mask=m||1;\n"
+" d.burnin_idle=document.getElementById('bi_idle').checked?1:0;\n"
+" d.burnin_active=document.getElementById('bi_act').checked?1:0;\n"
 " const r=await fetch('/api/settings',{method:'POST',body:JSON.stringify(d)});\n"
-" document.getElementById('msg').textContent=r.ok?'Gespeichert. Neustart...':'Fehler beim Speichern'};\n"
+" const t=r.ok?await r.text():'';\n"
+" document.getElementById('msg').textContent=r.ok?(t=='reboot'?'Gespeichert. Neustart...':'Gespeichert und sofort übernommen.'):'Fehler beim Speichern'};\n"
 "async function post(u){const r=await fetch(u,{method:'POST'});\n"
 " document.getElementById('msg').textContent=r.ok?'Fertig':'Fehler'}\n"
 "async function recal(){const p=document.getElementById('frc').value;\n"
@@ -243,7 +246,8 @@ static const char k_page[] =
 " const m=document.getElementById('bkmsg');if(!f){m.textContent='Wähle eine Datei';return}\n"
 " let d;try{d=JSON.parse(await f.text())}catch(e){m.textContent='Ungültiges JSON';return}\n"
 " const r=await fetch('/api/settings',{method:'POST',body:JSON.stringify(d)});\n"
-" m.textContent=r.ok?'Wiederhergestellt. Neustart...':'Fehler beim Wiederherstellen'}\n"
+" const t=r.ok?await r.text():'';\n"
+" m.textContent=r.ok?(t=='reboot'?'Wiederhergestellt. Neustart...':'Wiederhergestellt und sofort übernommen.'):'Fehler beim Wiederherstellen'}\n"
 "load();refresh();setInterval(refresh,5000);\n"
 "</script></html>\n";
 
@@ -253,7 +257,6 @@ static esp_err_t h_root(httpd_req_t *req)
     return httpd_resp_send(req, k_page, HTTPD_RESP_USE_STRLEN);
 }
 
-// -------------------------------------------------------------------- estado
 static esp_err_t h_state(httpd_req_t *req)
 {
     air_sample_t s;
@@ -285,8 +288,6 @@ static esp_err_t h_state(httpd_req_t *req)
                   (unsigned)idle_s, dimmed ? "true" : "false",
                   idle_shown ? "true" : "false");
 
-    // Bateria: es lo unico que se puede consultar con el USB fuera, asi que
-    // es la herramienta para medir el consumo real en descarga.
     pmu_status_t b;
     if (pmu_available() && pmu_read(&b) == ESP_OK && b.present) {
         n += snprintf(json + n, sizeof(json) - n,
@@ -329,13 +330,10 @@ static esp_err_t h_state(httpd_req_t *req)
     return httpd_resp_send(req, json, n);
 }
 
-// ------------------------------------------------------------- configuracion
 static esp_err_t h_settings_get(httpd_req_t *req)
 {
     const settings_t *c = settings_get();
-    char json[900];
-    // Las contrasenas nunca se devuelven; el formulario las deja en blanco y
-    // solo se cambian si se escribe algo.
+    char json[1024];
     int n = snprintf(json, sizeof(json),
         "{\"wifi_ssid\":\"%s\",\"mqtt_uri\":\"%s\",\"mqtt_user\":\"%s\","
         "\"mqtt_prefix\":\"%s\",\"device_name\":\"%s\",\"lang\":\"%s\","
@@ -344,13 +342,15 @@ static esp_err_t h_settings_get(httpd_req_t *req)
         "\"page_dwell_s\":%u,\"chart_span_min\":%u,\"pages_mask\":%u,"
         "\"temp_offset\":%.1f,\"altitude_m\":%u,\"co2_asc\":%d,"
         "\"alarm_enabled\":%d,\"alarm_co2_ppm\":%u,\"alarm_clear_ppm\":%u,"
-        "\"alarm_volume\":%u,\"noise_offset_db\":%d}",
+        "\"alarm_volume\":%u,\"noise_offset_db\":%d,"
+        "\"burnin_idle\":%d,\"burnin_active\":%d}",
         c->wifi_ssid, c->mqtt_uri, c->mqtt_user, c->mqtt_prefix, c->device_name, c->lang,
         c->tz, c->ntp, c->brightness, c->night_brightness, c->screen_timeout_s,
         c->page_dwell_s, c->chart_span_min, c->pages_mask,
         c->temp_offset_dc / 10.0f, c->altitude_m, c->co2_asc ? 1 : 0,
         c->alarm_enabled ? 1 : 0, c->alarm_co2_ppm, c->alarm_clear_ppm,
-        c->alarm_volume, c->noise_offset_db);
+        c->alarm_volume, c->noise_offset_db,
+        c->burnin_idle ? 1 : 0, c->burnin_active ? 1 : 0);
 
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, json, n);
@@ -365,8 +365,6 @@ static void copy_str(const cJSON *root, const char *key, char *dst, size_t len,
     strlcpy(dst, it->valuestring, len);
 }
 
-// Los <input> llegan como cadenas aunque sean numericos, asi que se aceptan
-// las dos formas.
 static bool get_num(const cJSON *root, const char *key, double *out)
 {
     const cJSON *it = cJSON_GetObjectItemCaseSensitive(root, key);
@@ -381,7 +379,7 @@ static bool get_num(const cJSON *root, const char *key, double *out)
 static void reboot_task(void *arg)
 {
     (void)arg;
-    vTaskDelay(pdMS_TO_TICKS(700)); // deja salir la respuesta HTTP
+    vTaskDelay(pdMS_TO_TICKS(700));
     esp_restart();
 }
 
@@ -410,6 +408,8 @@ static esp_err_t h_settings_post(httpd_req_t *req)
     }
 
     settings_t *c = settings_get();
+    const settings_t prev = *c;
+
     copy_str(root, "wifi_ssid", c->wifi_ssid, sizeof(c->wifi_ssid), false);
     copy_str(root, "wifi_pass", c->wifi_pass, sizeof(c->wifi_pass), true);
     copy_str(root, "mqtt_uri", c->mqtt_uri, sizeof(c->mqtt_uri), false);
@@ -424,7 +424,7 @@ static esp_err_t h_settings_post(httpd_req_t *req)
     double d;
     if (get_num(root, "brightness", &d))       c->brightness = (uint8_t)(d < 1 ? 1 : (d > 255 ? 255 : d));
     if (get_num(root, "night_brightness", &d)) c->night_brightness = (uint8_t)(d < 0 ? 0 : (d > 255 ? 255 : d));
-    if (get_num(root, "screen_timeout_s", &d)) c->screen_timeout_s = (uint16_t)(d < 0 ? 0 : d);
+    if (get_num(root, "screen_timeout_s", &d)) c->screen_timeout_s = (uint16_t)(d < 0 ? 0 : (d > 65535 ? 65535 : d));
     if (get_num(root, "page_dwell_s", &d))     c->page_dwell_s = (uint16_t)(d < 0 ? 0 : d);
     if (get_num(root, "chart_span_min", &d))   c->chart_span_min = (uint16_t)(d < 5 ? 5 : (d > 1440 ? 1440 : d));
     if (get_num(root, "pages_mask", &d))       c->pages_mask = (uint8_t)(d < 1 ? 1 : (d > 63 ? 63 : d));
@@ -435,38 +435,64 @@ static esp_err_t h_settings_post(httpd_req_t *req)
     if (get_num(root, "alarm_co2_ppm", &d))    c->alarm_co2_ppm = (uint16_t)(d < 400 ? 400 : (d > 5000 ? 5000 : d));
     if (get_num(root, "alarm_clear_ppm", &d))  c->alarm_clear_ppm = (uint16_t)(d < 400 ? 400 : (d > 5000 ? 5000 : d));
     if (get_num(root, "alarm_volume", &d))     c->alarm_volume = (uint8_t)(d < 0 ? 0 : (d > 100 ? 100 : d));
-    if (get_num(root, "noise_offset_db", &d)) c->noise_offset_db = (int16_t)(d < 0 ? 0 : (d > 200 ? 200 : d));
+    if (get_num(root, "noise_offset_db", &d))  c->noise_offset_db = (int16_t)(d < 0 ? 0 : (d > 200 ? 200 : d));
+    if (get_num(root, "burnin_idle", &d))      c->burnin_idle = (d != 0);
+    if (get_num(root, "burnin_active", &d))    c->burnin_active = (d != 0);
     cJSON_Delete(root);
 
-    // La histeresis solo existe si el umbral de callar queda POR DEBAJO del de
-    // avisar. Igualados o al reves, el aviso se dispararia y se cancelaria en
-    // la misma muestra: mejor corregirlo aqui que dejar el aparato pitando.
     if (c->alarm_clear_ppm >= c->alarm_co2_ppm) {
         c->alarm_clear_ppm = (c->alarm_co2_ppm > 500) ? c->alarm_co2_ppm - 200 : 400;
         ESP_LOGW(TAG, "umbral de rearme por encima del de aviso: bajado a %u ppm",
                  c->alarm_clear_ppm);
     }
 
-    display_set_brightness(c->brightness); // esto si se nota al instante
-    sound_set_volume(c->alarm_volume);     // para que el boton de prueba use el nuevo
+    const ui_config_t uicfg = {
+        .page_dwell_s = c->page_dwell_s,
+        .pages_mask = c->pages_mask,
+        .chart_span_min = c->chart_span_min,
+        .brightness = c->brightness,
+        .night_brightness = c->night_brightness,
+        .screen_timeout_s = c->screen_timeout_s,
+        .burnin_idle = c->burnin_idle,
+        .burnin_active = c->burnin_active,
+    };
+    if (lvgl_port_lock(50)) {
+        ui_apply_config(&uicfg);
+        lvgl_port_unlock();
+    } else {
+        display_set_brightness(c->brightness);
+    }
+    sound_set_volume(c->alarm_volume);
 
     esp_err_t err = settings_save();
     if (err != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "no se pudo guardar");
         return ESP_FAIL;
     }
-    httpd_resp_sendstr(req, "ok");
-    // Reiniciar es la forma honesta de aplicar red, MQTT, paginas y ajustes
-    // del sensor de una vez, sin medio estado a medias.
-    xTaskCreate(reboot_task, "reboot", 2048, NULL, 5, NULL);
+
+    const bool need_reboot =
+        strcmp(prev.wifi_ssid, c->wifi_ssid) != 0 ||
+        strcmp(prev.wifi_pass, c->wifi_pass) != 0 ||
+        strcmp(prev.mqtt_uri, c->mqtt_uri) != 0 ||
+        strcmp(prev.mqtt_user, c->mqtt_user) != 0 ||
+        strcmp(prev.mqtt_pass, c->mqtt_pass) != 0 ||
+        strcmp(prev.mqtt_prefix, c->mqtt_prefix) != 0 ||
+        strcmp(prev.device_name, c->device_name) != 0 ||
+        strcmp(prev.lang, c->lang) != 0 ||
+        strcmp(prev.tz, c->tz) != 0 ||
+        strcmp(prev.ntp, c->ntp) != 0 ||
+        prev.pages_mask != c->pages_mask ||
+        prev.temp_offset_dc != c->temp_offset_dc ||
+        prev.altitude_m != c->altitude_m ||
+        prev.co2_asc != c->co2_asc;
+
+    httpd_resp_sendstr(req, need_reboot ? "reboot" : "ok");
+    if (need_reboot) {
+        xTaskCreate(reboot_task, "reboot", 2048, NULL, 5, NULL);
+    }
     return ESP_OK;
 }
 
-// ----------------------------------------------------------- mantenimiento
-// Copia de seguridad de los ajustes. Por defecto SIN contrasenas: este panel
-// no tiene clave, y cualquiera en la red podria descargarse la del WiFi. Con
-// ?secrets=1 se incluyen, que es lo unico que permite restaurar de un tiron
-// tras un borrado total, pero eso lo pide el usuario a sabiendas.
 static esp_err_t h_backup(httpd_req_t *req)
 {
     bool con_secretos = false;
@@ -479,7 +505,7 @@ static esp_err_t h_backup(httpd_req_t *req)
     }
 
     const settings_t *c = settings_get();
-    char json[900];
+    char json[1024];
     int n = snprintf(json, sizeof(json),
         "{\"wifi_ssid\":\"%s\",\"mqtt_uri\":\"%s\",\"mqtt_user\":\"%s\","
         "\"mqtt_prefix\":\"%s\",\"device_name\":\"%s\",\"lang\":\"%s\","
@@ -487,12 +513,14 @@ static esp_err_t h_backup(httpd_req_t *req)
         "\"night_brightness\":%u,\"screen_timeout_s\":%u,\"chart_span_min\":%u,"
         "\"pages_mask\":%u,\"temp_offset\":%.1f,\"altitude_m\":%u,"
         "\"co2_asc\":%d,\"alarm_enabled\":%d,\"alarm_co2_ppm\":%u,"
-        "\"alarm_clear_ppm\":%u,\"alarm_volume\":%u",
+        "\"alarm_clear_ppm\":%u,\"alarm_volume\":%u,"
+        "\"burnin_idle\":%d,\"burnin_active\":%d",
         c->wifi_ssid, c->mqtt_uri, c->mqtt_user, c->mqtt_prefix, c->device_name,
         c->lang, c->tz, c->ntp, c->brightness, c->night_brightness,
         c->screen_timeout_s, c->chart_span_min, c->pages_mask,
         c->temp_offset_dc / 10.0, c->altitude_m, c->co2_asc,
-        c->alarm_enabled, c->alarm_co2_ppm, c->alarm_clear_ppm, c->alarm_volume);
+        c->alarm_enabled, c->alarm_co2_ppm, c->alarm_clear_ppm, c->alarm_volume,
+        c->burnin_idle ? 1 : 0, c->burnin_active ? 1 : 0);
 
     if (con_secretos) {
         n += snprintf(json + n, sizeof(json) - n,
@@ -508,8 +536,6 @@ static esp_err_t h_backup(httpd_req_t *req)
     return ESP_OK;
 }
 
-// Prueba del altavoz: sin esto no hay forma de saber si el audio funciona
-// sin esperar a que el CO2 pase del umbral.
 static esp_err_t h_beep(httpd_req_t *req)
 {
     if (!sound_available()) {
@@ -530,9 +556,6 @@ static esp_err_t h_fanclean(httpd_req_t *req)
     return httpd_resp_sendstr(req, "limpiando (10 s)");
 }
 
-// Recalibracion forzada de CO2. Aqui solo se valida y se encola: el comando
-// exige la medicion parada, y pararla desde este hilo chocaria con la lectura
-// que hace la tarea del sensor cada segundo.
 static esp_err_t h_co2recal(httpd_req_t *req)
 {
     char q[48], v[8];
@@ -555,9 +578,6 @@ static esp_err_t h_co2recal(httpd_req_t *req)
     return httpd_resp_sendstr(req, "recalibrando, tarda unos segundos...");
 }
 
-// Diagnostico: parar o arrancar la medicion del sensor. Parado el ventilador
-// se detiene, que es lo que permite medir cuanto ruido mete. No se mide nada
-// mientras tanto.
 static esp_err_t h_fan(httpd_req_t *req)
 {
     char q[32], v[8];
@@ -573,9 +593,6 @@ static esp_err_t h_fan(httpd_req_t *req)
     return httpd_resp_sendstr(req, v[0] == '1' ? "midiendo" : "parado (no se mide nada)");
 }
 
-// Brillo en vivo mientras se arrastra el deslizador. NO guarda: lo guardado
-// sigue siendo lo que haya en NVS hasta que se pulse Guardar. Sin esto el
-// deslizador es a ciegas y hay que reiniciar para ver el resultado.
 static esp_err_t h_brightness(httpd_req_t *req)
 {
     char q[24], v[8];
@@ -585,9 +602,14 @@ static esp_err_t h_brightness(httpd_req_t *req)
         return ESP_FAIL;
     }
     int b = atoi(v);
-    if (b < 1) b = 1;
+    if (b < 0) b = 0;
     if (b > 255) b = 255;
-    display_set_brightness((uint8_t)b);
+    if (lvgl_port_lock(50)) {
+        ui_set_live_brightness((uint8_t)b);
+        lvgl_port_unlock();
+    } else {
+        display_set_brightness((uint8_t)b);
+    }
     return httpd_resp_sendstr(req, "ok");
 }
 
@@ -598,7 +620,6 @@ static esp_err_t h_reboot(httpd_req_t *req)
     return ESP_OK;
 }
 
-// --------------------------------------------------------------------- OTA
 static esp_err_t h_ota(httpd_req_t *req)
 {
     const esp_partition_t *part = esp_ota_get_next_update_partition(NULL);
@@ -641,13 +662,12 @@ static esp_err_t h_ota(httpd_req_t *req)
     return ESP_OK;
 }
 
-// -------------------------------------------------------------------- inicio
 esp_err_t webcfg_start(webcfg_sample_fn get_sample)
 {
     s_get_sample = get_sample;
 
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-    cfg.stack_size = 8192;          // el OTA y cJSON necesitan holgura
+    cfg.stack_size = 8192;
     cfg.max_uri_handlers = 16;
     cfg.lru_purge_enable = true;
     cfg.recv_wait_timeout = 10;
@@ -672,10 +692,6 @@ esp_err_t webcfg_start(webcfg_sample_fn get_sample)
         ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_server, &routes[i]),
                             TAG, "ruta %s", routes[i].uri);
     }
-    // Sin IP todavia: arrancamos antes de que el DHCP conteste. Decir una
-    // direccion concreta aqui seria mentir (lo hacia: cantaba 192.168.4.1
-    // incluso conectado a la red de casa). La IP real la canta net.c en
-    // cuanto llega el GOT_IP; en el portal es siempre 192.168.4.1.
     ESP_LOGI(TAG, "servidor web escuchando en el puerto %d", cfg.server_port);
     return ESP_OK;
 }

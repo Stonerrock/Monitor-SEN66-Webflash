@@ -12,10 +12,12 @@ Dieses Dokument fasst alle Änderungen, Fehlerbehebungen und Optimierungen zusam
   - `CONFIG_ESP_WIFI_ENABLE_WPA3_SAE=y` ergänzt, damit der WPA3-Handshake (Simultaneous Authentication of Equals) einkompiliert wird.
 - **`main/net.c`:**
   - PMF-Konfiguration in `net_start()` aktiviert:
-    ```c
+    
+```c
     sta.sta.pmf_cfg.capable = true;
     sta.sta.pmf_cfg.required = false;
-    ```
+    
+```
     Erlaubt sowohl WPA2 als auch WPA3 und Mischbetrieb.
 
 ### 1.2 Deutsche Status- und Fehlerprotokollierung (Disconnect-Reason)
@@ -31,11 +33,27 @@ Dieses Dokument fasst alle Änderungen, Fehlerbehebungen und Optimierungen zusam
 - **Problem:** In der Weboberfläche erschien die Luftqualität auf Spanisch (z. B. `MALO`), da die interne API `/api/state` spanische Strings lieferte, das JavaScript-Mapping aber nur englische Schlüssel (`poor`) erwartete.
 - **`main/webcfg.c`:**
   - Das Mapping-Objekt `NIV` im Frontend-JavaScript erweitert:
-    ```javascript
+    
+```javascript
     const NIV={good:'Gut',fair:'Mäßig',moderate:'Mittel',poor:'Schlecht',bad:'Sehr schlecht',
                BUENO:'Gut',ACEPTABLE:'Mäßig',REGULAR:'Mittel',MALO:'Schlecht','MUY MALO':'Sehr schlecht'};
-    ```
+    
+```
   - Damit werden spanische und englische Sensorrückgaben zuverlässig auf Deutsch angezeigt.
+
+### 2.2 Home Assistant MQTT Discovery: Automatische Mehrsprachigkeit
+- **Problem:** In Home Assistant wurden die Sensor-Namen trotz deutscher Geräte-Einstellung auf Spanisch angezeigt (*Humedad*, *Temperatura*, *Ruido*, *Calidad del aire* sowie Batterie-Diagnosewerte).
+- **`main/ha_mqtt.c`:**
+  - Bei allen Sensoren mit Standard-`device_class` (`temperature`, `humidity`, `carbon_dioxide`, `sound_pressure`, `pm1`, `pm25`, `pm10` sowie `battery`, `voltage`, `battery_charging`, `plug`) wird im MQTT-Discovery-Payload kein hartkodiertes `"name"`-Feld mehr gesendet. Home Assistant vergibt dadurch automatisch den passenden Namen **in der im jeweiligen HA-Profil eingestellten Sprache** (z. B. Deutsch oder Englisch).
+  - Für die Gesamtbewertung (`level`, ohne `device_class`) wurde die Hilfsfunktion `air_quality_label(cfg->lang)` ergänzt, die je nach Gerätesprache `"Luftqualität"` (`de`), `"Air quality"` (`en`) oder `"Calidad del aire"` (`es`) sendet.
+  - *Hinweis:* Damit Home Assistant neue Discovery-Namen übernimmt, muss das Gerät einmalig unter **Einstellungen → Geräte & Dienste → MQTT** gelöscht werden.
+
+### 2.3 Einstellungen ohne Neustart übernehmen
+- **Problem:** Ein Klick auf „Speichern“ löste bisher immer einen kompletten Neustart (`esp_restart()`) aus – auch wenn nur Helligkeit, Dimmer-Zeit, Burn-in-Schutz oder Alarmlautstärke geändert wurden.
+- **`main/webcfg.c`, `main/ui.h`, `main/ui.c`:**
+  - Neue Funktion `ui_apply_config()` übernimmt Änderungen an Helligkeit, gedimmter Helligkeit, Timeout, Diagramm-Zeitfenster und Burn-in-Schutz sofort im laufenden Betrieb.
+  - Auch Alarm-Grenzen, Lautstärke und Lärm-Kalibrierung wirken unmittelbar ohne Neustart.
+  - Ein Neustart wird nur noch ausgelöst, wenn sich WLAN-, MQTT-, Sprach-, Zeitzonen-, Seiten- oder Sensor-Hardware-Einstellungen (`temp_offset`, `altitude_m`, `co2_asc`) geändert haben.
 
 ---
 
@@ -94,7 +112,40 @@ Die Benutzeroberfläche in **`main/ui.c`** wurde grundlegend überarbeitet, um d
 
 ---
 
-## 5. Bereinigung des Quellcodes
+## 5. Zuverlässiges Dimmen, Touch-Wakeup, Smooth Fading & Burn-in-Schutz
+
+### 5.1 Kombiniertes Hardware- & Software-Dimming
+- **Problem:** Trotz CO5300-Hardwarebefehlen (`0x53` / `0x51`) reagierte das AMOLED-Display bei Helligkeitsänderungen teilweise nur binär (an/aus) statt stufenlos.
+- **`main/display.c`:**
+  - Beim Abschalten (`level == 0`) wird `s_bctrl_init = false;` zurückgesetzt, damit beim erneuten Einschalten das Freigaberegister `0x53` (`0x20`) sicher erneut an den CO5300 gesendet wird.
+- **`main/ui.c` & `main/ui.h`:**
+  - Vollflächiges, unklickbares schwarzes Software-Dimming-Overlay (`s_dim_overlay`) auf `lv_layer_top()` ergänzt. Die Deckkraft wird invers zur Helligkeit (`255 - level`) gesteuert und mit der Hardware-Helligkeit kombiniert. Dadurch lässt sich das AMOLED zuverlässig stufenlos bis komplett schwarz dimmen.
+  - Neue Funktion `ui_set_live_brightness(uint8_t level)` für die Live-Vorschau aus dem Web-Interface.
+
+### 5.2 Touch-Wakeup & frei einstellbare Dimmer-Zeit
+- **Problem:** Das `lv_tileview` fing Touch-Eingaben ab, sodass Berührungen nicht zuverlässig an das Hintergrund-Screen-Event weitergeleitet wurden. Zudem waren nur feste Zeitstufen im Dropdown wählbar.
+- **`main/ui.c`:**
+  - Touch- und Scroll-Events (`LV_EVENT_PRESSED`, `LV_EVENT_CLICKED`, `LV_EVENT_SCROLL_BEGIN`) direkt am `s_tv` (Tileview) sowie Event-Bubbling auf den einzelnen Tiles aktiviert; Diagramme auf nicht-klickbar gestellt. Jede Berührung weckt das Display sofort auf und setzt den Timer zurück.
+- **`main/webcfg.c`:**
+  - Das Feld **„Abdunkeln nach“** wurde von einem festen Dropdown in ein freies Zahlenfeld in Sekunden (`0` = Nie, bis `86400`) geändert.
+  - Beide Schieberegler (**Helligkeit** und **Gedimmte Helligkeit**) steuern über `/api/brightness` jetzt sofort live das Display inkl. LVGL-Overlay (auch Wert `0` = komplett aus).
+
+### 5.3 Sanftes Ein- und Ausblenden (Smooth Fading)
+- **`main/ui.c`:**
+  - Helligkeitswechsel beim automatischen Abdunkeln (`500 ms`, `FADE_DIM_MS`) und beim Aufwecken per Touch (`250 ms`, `FADE_WAKE_MS`) erfolgen nun über eine weiche LVGL-Animation (`lv_anim_t` mit `lv_anim_path_ease_out`).
+  - Der Live-Schieberegler im Web-Interface reagiert weiterhin ohne Verzögerung (`duration_ms = 0`).
+
+### 5.4 AMOLED Burn-in-Schutz (Pixel-Shift)
+- **`main/settings.h`, `main/settings.c`, `main/app_main.c`, `main/ui.h`, `main/ui.c`, `main/webcfg.c`:**
+  - Alle sichtbaren UI-Elemente liegen in einem gemeinsamen Container `s_root`.
+  - Über zwei getrennte Optionen im Web-Interface (**Im gedimmten Modus**, Standard: an; **Im ungedimmten Modus**, Standard: aus) lässt sich ein sanfter Pixel-Shift aktivieren, der die Anzeige alle 60 Sekunden unmerklich um ±3 Pixel auf einer 9-Punkte-Bahn verschiebt.
+  - Beim Aufwecken (sofern im ungedimmten Modus deaktiviert) springt das Display sofort wieder exakt zentriert auf `(0, 0)` zurück.
+  - NVS-abwärtskompatibel (neue Felder am Ende von `settings_t`, inkl. Backup/Restore-Unterstützung).
+
+---
+
+## 6. Bereinigung des Quellcodes & Clean Build
 
 - **Kommentare in `main/ui.c`:** Alle Quellcode-Kommentare im UI-Modul wurden von Spanisch ins Deutsche übersetzt.
-- **Bereinigung von Sonderzeichen:** Entfernung fehlerhafter Backslash-Escapes in String-Literals (`"%s %s"`, `"%s °C"`, `""`), sodass der Code sauber und ohne Warnings kompiliert.
+- **Bereinigung von Sonderzeichen:** Entfernung fehlerhafter Backslash-Escapes in String-Literals (`"%s %s"`, `"%s °C"`, `""`).
+- **LVGL-9-Kompatibilität (Clean Build):** Alle veralteten `lv_obj_add_flag()`- und `lv_obj_remove_flag()`-Aufrufe in `main/ui.c` wurden durch die modernen LVGL-9-Setter (`lv_obj_set_hidden`, `lv_obj_set_clickable`, `lv_obj_set_scrollable`, `lv_obj_set_event_bubble`) ersetzt. Das Projekt kompiliert damit komplett ohne `deprecated`-Warnungen.

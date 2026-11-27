@@ -19,19 +19,17 @@ static bool s_available = true;
 static char s_state_topic[64];
 static char s_avty_topic[64];
 
-// Clase de dispositivo de HA por metrica. Vacio = sin clase (HA no tiene
-// clase para PM4 ni para los indices VOC/NOx de Sensirion).
 static const char *device_class(air_metric_t m)
 {
     switch (m) {
-    case AIR_PM1:  return "pm1";
-    case AIR_PM25: return "pm25";
-    case AIR_PM10: return "pm10";
-    case AIR_HUM:  return "humidity";
-    case AIR_TEMP: return "temperature";
-    case AIR_CO2:  return "carbon_dioxide";
+    case AIR_PM1:   return "pm1";
+    case AIR_PM25:  return "pm25";
+    case AIR_PM10:  return "pm10";
+    case AIR_HUM:   return "humidity";
+    case AIR_TEMP:  return "temperature";
+    case AIR_CO2:   return "carbon_dioxide";
     case AIR_NOISE: return "sound_pressure";
-    default:       return "";
+    default:        return "";
     }
 }
 
@@ -45,8 +43,15 @@ static const char *icon(air_metric_t m)
     }
 }
 
-// Bloque "device" comun a todas las entidades: es lo que hace que HA las
-// agrupe en un solo aparato en vez de en nueve sueltas.
+static const char *air_quality_label(const char *lang)
+{
+    if (lang) {
+        if (strcmp(lang, "de") == 0) return "Luftqualität";
+        if (strcmp(lang, "en") == 0) return "Air quality";
+    }
+    return "Calidad del aire";
+}
+
 static int append_device(char *buf, size_t len)
 {
     const settings_t *cfg = settings_get();
@@ -60,27 +65,35 @@ static void publish_discovery_one(air_metric_t m)
 {
     const settings_t *cfg = settings_get();
     const char *key = air_metric_key(m);
+    const char *dclass = device_class(m);
     char topic[160];
     char payload[640];
 
     snprintf(topic, sizeof(topic), "%s/sensor/%s/%s/config",
              cfg->mqtt_prefix, net_device_id(), key);
 
-    int n = snprintf(payload, sizeof(payload),
-        "{\"name\":\"%s\",\"uniq_id\":\"%s_%s\","
+    int n = snprintf(payload, sizeof(payload), "{");
+
+    if (!dclass[0]) {
+        n += snprintf(payload + n, sizeof(payload) - n,
+                      "\"name\":\"%s\",", air_metric_label(m));
+    }
+
+    n += snprintf(payload + n, sizeof(payload) - n,
+        "\"uniq_id\":\"%s_%s\","
         "\"stat_t\":\"%s\",\"avty_t\":\"%s\","
         "\"val_tpl\":\"{{ value_json.%s }}\","
         "\"stat_cla\":\"measurement\",\"sug_dsp_prc\":%d,",
-        air_metric_label(m), net_device_id(), key,
+        net_device_id(), key,
         s_state_topic, s_avty_topic, key, air_metric_decimals(m));
 
     if (air_metric_unit_ha(m)[0]) {
         n += snprintf(payload + n, sizeof(payload) - n,
                       "\"unit_of_meas\":\"%s\",", air_metric_unit_ha(m));
     }
-    if (device_class(m)[0]) {
+    if (dclass[0]) {
         n += snprintf(payload + n, sizeof(payload) - n,
-                      "\"dev_cla\":\"%s\",", device_class(m));
+                      "\"dev_cla\":\"%s\",", dclass);
     }
     if (icon(m)[0]) {
         n += snprintf(payload + n, sizeof(payload) - n, "\"ic\":\"%s\",", icon(m));
@@ -88,10 +101,9 @@ static void publish_discovery_one(air_metric_t m)
     n += append_device(payload + n, sizeof(payload) - n);
     n += snprintf(payload + n, sizeof(payload) - n, "}");
 
-    esp_mqtt_client_publish(s_client, topic, payload, n, 0, 1 /* retenido */);
+    esp_mqtt_client_publish(s_client, topic, payload, n, 0, 1);
 }
 
-// Entidades extra que no salen del sensor: el semaforo global y la cobertura.
 static void publish_discovery_extras(void)
 {
     const settings_t *cfg = settings_get();
@@ -101,10 +113,10 @@ static void publish_discovery_extras(void)
     snprintf(topic, sizeof(topic), "%s/sensor/%s/level/config",
              cfg->mqtt_prefix, net_device_id());
     n = snprintf(payload, sizeof(payload),
-        "{\"name\":\"Calidad del aire\",\"uniq_id\":\"%s_level\","
+        "{\"name\":\"%s\",\"uniq_id\":\"%s_level\","
         "\"stat_t\":\"%s\",\"avty_t\":\"%s\",\"val_tpl\":\"{{ value_json.level }}\","
         "\"ic\":\"mdi:weather-windy\",",
-        net_device_id(), s_state_topic, s_avty_topic);
+        air_quality_label(cfg->lang), net_device_id(), s_state_topic, s_avty_topic);
     n += append_device(payload + n, sizeof(payload) - n);
     n += snprintf(payload + n, sizeof(payload) - n, "}");
     esp_mqtt_client_publish(s_client, topic, payload, n, 0, 1);
@@ -122,9 +134,6 @@ static void publish_discovery_extras(void)
     esp_mqtt_client_publish(s_client, topic, payload, n, 0, 1);
 }
 
-// Bateria. Solo si hay celda conectada: sin ella estas entidades saldrian en
-// Home Assistant para no decir nada nunca, y un aparato enchufado a la red no
-// tiene por que enseñar un porcentaje fantasma.
 static void publish_discovery_battery(void)
 {
     pmu_status_t b;
@@ -134,18 +143,17 @@ static void publish_discovery_battery(void)
     char topic[160], payload[640];
     int n;
 
-    // Todo va como diagnostico: es informacion del aparato, no del aire.
-    struct { const char *comp, *key, *name, *extra, *tpl; } ent[] = {
-        {"sensor", "battery", "Bateria",
+    struct { const char *comp, *key, *extra, *tpl; } ent[] = {
+        {"sensor", "battery",
          "\"dev_cla\":\"battery\",\"unit_of_meas\":\"%\",\"stat_cla\":\"measurement\",",
          "{{ value_json.bat }}"},
-        {"sensor", "bat_mv", "Tension de bateria",
+        {"sensor", "bat_mv",
          "\"dev_cla\":\"voltage\",\"unit_of_meas\":\"mV\",\"stat_cla\":\"measurement\",",
          "{{ value_json.bat_mv }}"},
-        {"binary_sensor", "charging", "Cargando",
+        {"binary_sensor", "charging",
          "\"dev_cla\":\"battery_charging\",\"pl_on\":\"ON\",\"pl_off\":\"OFF\",",
          "{{ 'ON' if value_json.charging else 'OFF' }}"},
-        {"binary_sensor", "usb", "Alimentacion USB",
+        {"binary_sensor", "usb",
          "\"dev_cla\":\"plug\",\"pl_on\":\"ON\",\"pl_off\":\"OFF\",",
          "{{ 'ON' if value_json.usb else 'OFF' }}"},
     };
@@ -154,10 +162,10 @@ static void publish_discovery_battery(void)
         snprintf(topic, sizeof(topic), "%s/%s/%s/%s/config",
                  cfg->mqtt_prefix, ent[i].comp, net_device_id(), ent[i].key);
         n = snprintf(payload, sizeof(payload),
-            "{\"name\":\"%s\",\"uniq_id\":\"%s_%s\","
+            "{\"uniq_id\":\"%s_%s\","
             "\"stat_t\":\"%s\",\"avty_t\":\"%s\",\"val_tpl\":\"%s\","
             "%s\"ent_cat\":\"diagnostic\",",
-            ent[i].name, net_device_id(), ent[i].key,
+            net_device_id(), ent[i].key,
             s_state_topic, s_avty_topic, ent[i].tpl, ent[i].extra);
         n += append_device(payload + n, sizeof(payload) - n);
         n += snprintf(payload + n, sizeof(payload) - n, "}");
@@ -168,9 +176,6 @@ static void publish_discovery_battery(void)
 
 static void publish_discovery(void)
 {
-    // Prefijo vacio = no queremos autodescubrimiento (p.ej. se usa Homebridge
-    // en vez de Home Assistant). Sin esto los mensajes salian igual, con el
-    // tema empezando por '/', que es basura retenida en el broker.
     if (settings_get()->mqtt_prefix[0] == '\0') {
         ESP_LOGI(TAG, "sin prefijo de descubrimiento, no publico configuracion");
         return;
@@ -189,8 +194,6 @@ static void mqtt_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     case MQTT_EVENT_CONNECTED:
         s_connected = true;
         ESP_LOGI(TAG, "conectado al broker");
-        // Reafirmamos lo que sabemos del sensor, que puede estar caido justo
-        // cuando el broker vuelve.
         esp_mqtt_client_publish(s_client, s_avty_topic,
                                 s_available ? "online" : "offline", 0, 1, 1);
         publish_discovery();
@@ -275,16 +278,11 @@ void ha_mqtt_publish(const air_sample_t *s)
     char json[512];
     int n = snprintf(json, sizeof(json), "{");
     for (int m = 0; m < AIR_METRIC_COUNT; m++) {
-        // Las metricas sin dato se omiten: HA conserva el ultimo valor
-        // conocido en vez de mostrar "desconocido" mientras el sensor calienta.
         if (isnan(s->v[m])) continue;
         n += snprintf(json + n, sizeof(json) - n, "%s\"%s\":%.*f",
                       n > 1 ? "," : "", air_metric_key((air_metric_t)m),
                       air_metric_decimals((air_metric_t)m), s->v[m]);
     }
-    // El nivel va como identificador estable en ingles, NO traducido: si
-    // cambiara con el idioma de la pantalla romperia las automatizaciones de
-    // Home Assistant, que comparan contra el valor.
     static const char *const NIVEL[] = {"good", "fair", "moderate", "poor", "bad"};
     const air_level_t lvl = air_overall(s);
     n += snprintf(json + n, sizeof(json) - n, "%s\"level\":\"%s\",\"rssi\":%d",
@@ -300,9 +298,5 @@ void ha_mqtt_publish(const air_sample_t *s)
     }
     n += snprintf(json + n, sizeof(json) - n, "}");
 
-    // RETENIDO a proposito: quien se suscriba despues (Home Assistant o
-    // Homebridge al reiniciar) recibe el ultimo estado al instante en vez de
-    // quedarse a ciegas hasta el siguiente envio. Que el dato sea viejo si el
-    // aparato se cae ya lo cubre el tema de disponibilidad con el last will.
     esp_mqtt_client_publish(s_client, s_state_topic, json, n, 0, 1);
 }

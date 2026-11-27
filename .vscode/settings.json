@@ -1,0 +1,17 @@
+{
+    "idf.currentSetup": "C:\\Users\\stone\\esp\\v5.5.2\\esp-idf",
+    "idf.customExtraVars": {
+        "IDF_TARGET": "esp32s3"
+    },
+    "clangd.path": "C:\\Users\\stone\\.espressif\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
+    "clangd.arguments": [
+      "--background-index",
+      "--query-driver=**",
+      "--compile-commands-dir=e:\\VSC\\Monitor-SEN66\\build"
+    ],
+    "idf.flashType": "UART",
+    "idf.port": "COM4",
+    "idf.openOcdConfigs": [
+        "board/esp32s3-builtin.cfg"
+    ]
+}

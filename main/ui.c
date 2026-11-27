@@ -12,23 +12,17 @@
 #define SCR_H 466
 #define CHART_POINTS 60
 
-// Randabstand, damit nichts auf den gebogenen Rand des runden Displays faellt.
 #define EDGE 10
-
-// Horizontale Verschiebung (in Pixeln) zur Zentrierung auf dem runden Display
 #define UI_X_OFFSET 4
-
-// Maximaler Ring-Durchmesser zur vollstaendigen Ausnutzung der 1.75" Diagonale (466x466)
 #define RING_D 446
-
-// Nutzbarer Innenraum im Ring: Aussenradius abzueglich Bogendicke.
-// Dient als Referenz fuer die Koordinaten der Seiten.
 #define RING_INNER_R ((RING_D) / 2 - 22)
 
-// Laerm/Schallpegel steht AM ENDE, um die bereits gespeicherten Bits von pages_mask nicht zu verschieben.
+#define FADE_DIM_MS     500
+#define FADE_WAKE_MS    250
+#define BURNIN_PERIOD_S 60
+
 enum { PAGE_SUMMARY = 0, PAGE_CO2, PAGE_PM, PAGE_GAS, PAGE_CLIMATE, PAGE_NOISE };
 
-// Wiederverwendbare Kreisanzeige: 270-Grad-Bogen + Wert + Einheit.
 typedef struct {
     lv_obj_t *arc;
     lv_obj_t *value;
@@ -40,16 +34,15 @@ static air_history_t *s_hist;
 static ui_config_t s_cfg;
 static void (*s_set_brightness)(uint8_t);
 
+static lv_obj_t *s_root;
 static lv_obj_t *s_tv;
 static lv_obj_t *s_status_time;
 static lv_obj_t *s_status_msg;
 static lv_obj_t *s_status_net;
 static lv_obj_t *s_status_bat;
+static lv_obj_t *s_dim_overlay;
+static uint8_t s_cur_brightness = 255;
 
-// Ruhemodus: Bei Inaktivitaet wird das Display gedimmt und zeigt ALLE
-// Messwerte auf einen Blick. Dies ist ein separates Panel ueber dem Tileview,
-// keine zusaetzliche Seite: So wird es beim Wischen uebersprungen und beim Aufwachen
-// kehrt man exakt zu der Seite zurueck, auf der man war.
 static lv_obj_t *s_idle_panel;
 static lv_obj_t *s_idle_val[AIR_METRIC_COUNT];
 static lv_obj_t *s_idle_level;
@@ -58,7 +51,6 @@ static lv_obj_t *s_idle_ip;
 static bool s_idle_shown;
 static lv_obj_t *s_dots[UI_PAGE_COUNT];
 
-// Seite -> Spalte im Tileview (-1 wenn Seite ausgeblendet ist)
 static int s_page_col[UI_PAGE_COUNT];
 static int s_col_page[UI_PAGE_COUNT];
 static int s_cols;
@@ -82,11 +74,62 @@ static lv_chart_series_t *s_gas_ser_voc, *s_gas_ser_nox;
 static uint32_t s_idle_s;
 static bool s_dimmed;
 static bool s_on_battery;
+static uint32_t s_burnin_s;
+static uint8_t s_burnin_step;
 #define UI_BATTERY_TIMEOUT_S 30
 static air_sample_t s_last;
 
 // ------------------------------------------------------------------ helpers
 static lv_color_t col(uint32_t rgb) { return lv_color_hex(rgb); }
+
+static void burnin_reset(void)
+{
+    s_burnin_s = 0;
+    if (s_burnin_step != 0) {
+        s_burnin_step = 0;
+        if (s_root) lv_obj_set_pos(s_root, 0, 0);
+    }
+}
+
+static void apply_brightness_immediate(uint8_t level)
+{
+    s_cur_brightness = level;
+    if (s_dim_overlay) {
+        lv_opa_t opa = (level == 0) ? LV_OPA_COVER : (lv_opa_t)(255 - level);
+        lv_obj_set_style_bg_opa(s_dim_overlay, opa, 0);
+    }
+    if (s_set_brightness) {
+        s_set_brightness(level);
+    }
+}
+
+static void fade_exec_cb(void *var, int32_t v)
+{
+    (void)var;
+    if (v < 0) v = 0;
+    if (v > 255) v = 255;
+    uint8_t lvl = (uint8_t)v;
+    if (lvl == s_cur_brightness) return;
+    apply_brightness_immediate(lvl);
+}
+
+static void fade_brightness(uint8_t target, uint32_t duration_ms)
+{
+    lv_anim_delete(&s_cur_brightness, fade_exec_cb);
+    if (duration_ms == 0 || s_cur_brightness == target) {
+        apply_brightness_immediate(target);
+        return;
+    }
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, &s_cur_brightness);
+    lv_anim_set_exec_cb(&a, fade_exec_cb);
+    lv_anim_set_values(&a, s_cur_brightness, target);
+    lv_anim_set_duration(&a, duration_ms);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+    lv_anim_start(&a);
+}
 
 static void fmt_value(char *buf, size_t len, air_metric_t m, float v)
 {
@@ -98,7 +141,7 @@ static lv_obj_t *plain(lv_obj_t *parent)
 {
     lv_obj_t *o = lv_obj_create(parent);
     lv_obj_remove_style_all(o);
-    lv_obj_remove_flag(o, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(o, false);
     return o;
 }
 
@@ -111,9 +154,6 @@ static lv_obj_t *make_label(lv_obj_t *parent, const lv_font_t *font, uint32_t co
     return l;
 }
 
-// Sekundaerwert: kleine Beschriftung oben und der Wert allein darunter.
-// Durch die Trennung von Einheit und Zahl kann der Wert groesser dargestellt werden,
-// was innerhalb eines Rings wichtig ist.
 static void mini_create(lv_obj_t *parent, lv_obj_t **name, lv_obj_t **value,
                         int dx, int dy, const lv_font_t *font_value)
 {
@@ -132,11 +172,11 @@ static void gauge_create(gauge_t *g, lv_obj_t *parent, int size, int thickness,
     lv_obj_set_size(g->arc, size, size);
     lv_obj_align(g->arc, LV_ALIGN_CENTER, UI_X_OFFSET, 0);
     lv_arc_set_rotation(g->arc, 0);
-    lv_arc_set_bg_angles(g->arc, 135, 45); // 270 Grad, Oeffnung unten
+    lv_arc_set_bg_angles(g->arc, 135, 45);
     lv_arc_set_range(g->arc, 0, 1000);
     lv_arc_set_value(g->arc, 0);
     lv_obj_remove_style(g->arc, NULL, LV_PART_KNOB);
-    lv_obj_remove_flag(g->arc, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_clickable(g->arc, false);
     lv_obj_set_style_arc_width(g->arc, thickness, LV_PART_MAIN);
     lv_obj_set_style_arc_width(g->arc, thickness, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(g->arc, col(0x1e293b), LV_PART_MAIN);
@@ -172,7 +212,6 @@ static void gauge_update(gauge_t *g, air_metric_t m, float v)
     lv_label_set_text(g->value, buf);
     lv_label_set_text(g->unit, air_metric_unit_ui(m));
     lv_label_set_text(g->caption, i18n_metric(m));
-    // Wertbreite aendert sich dynamisch: Einheit darunter neu ausrichten
     lv_obj_align_to(g->unit, g->value, LV_ALIGN_OUT_BOTTOM_MID, 0, 2);
 }
 
@@ -183,27 +222,25 @@ static void chart_create(lv_obj_t **out_chart, lv_chart_series_t **out_ser,
     lv_obj_set_size(c, w, h);
     lv_chart_set_type(c, LV_CHART_TYPE_LINE);
     lv_chart_set_point_count(c, CHART_POINTS);
-    lv_chart_set_div_line_count(c, 0, 0); // Ohne Gitter: nur die Linie
+    lv_chart_set_div_line_count(c, 0, 0);
     lv_chart_set_update_mode(c, LV_CHART_UPDATE_MODE_SHIFT);
     lv_obj_set_style_bg_opa(c, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(c, 0, 0);
     lv_obj_set_style_pad_all(c, 0, 0);
     lv_obj_set_style_line_color(c, col(0x1e293b), LV_PART_MAIN);
     lv_obj_set_style_line_width(c, 2, LV_PART_ITEMS);
-    lv_obj_set_style_width(c, 0, LV_PART_INDICATOR);  // Keine Datenpunkte
+    lv_obj_set_style_width(c, 0, LV_PART_INDICATOR);
     lv_obj_set_style_height(c, 0, LV_PART_INDICATOR);
+    lv_obj_set_clickable(c, false);
     *out_ser = lv_chart_add_series(c, col(color), LV_CHART_AXIS_PRIMARY_Y);
     *out_chart = c;
 }
 
-// Zweite Kurve auf demselben Diagramm mit eigener vertikaler Skala:
-// Dient der Ueberlagerung unterschiedlicher Wertebereiche (z. B. Temperatur und Feuchte).
 static lv_chart_series_t *chart_add_secondary(lv_obj_t *c, uint32_t color)
 {
     return lv_chart_add_series(c, col(color), LV_CHART_AXIS_SECONDARY_Y);
 }
 
-// Uebertraegt das Zeitfenster aus dem Verlauf in die Datenreihe, mit Luecken bei fehlenden Daten.
 static void chart_refresh_axis(lv_obj_t *chart, lv_chart_series_t *ser,
                                air_metric_t m, lv_chart_axis_t axis)
 {
@@ -218,11 +255,8 @@ static void chart_refresh_axis(lv_obj_t *chart, lv_chart_series_t *ser,
         lo = air_gauge_min(m);
         hi = air_gauge_max(m);
     }
-    // lv_chart arbeitet mit Ganzzahlen: Bei Metriken mit Dezimalstellen (Temperatur
-    // in Zehntelgraden) skalieren wir mit x10, damit die Kurve nicht treppenartig wirkt.
     const float k = air_metric_decimals(m) ? 10.0f : 1.0f;
 
-    // 10 % Toleranzbereich und Mindestabstand, damit eine flache Linie nicht direkt am Rand klebt
     float pad = (hi - lo) * 0.1f;
     if (pad < 0.5f) pad = 0.5f;
     lv_chart_set_range(chart, axis,
@@ -246,12 +280,9 @@ static void build_summary(lv_obj_t *tile)
 {
     gauge_create(&s_g_summary, tile, RING_D, 22,
                  &ui_font_48, &ui_font_28);
-    // In der Uebersicht steht im Zentrum Text, keine Zahl
-    lv_obj_add_flag(s_g_summary.value, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_g_summary.unit, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_g_summary.caption, LV_OBJ_FLAG_HIDDEN);
-    // Dieser Ring misst nicht: Er dient als Ampel und wird vollstaendig gefuellt.
-    // Gleiche Dicke fuer Anzeige und Spur, damit kein Rand hervorblitzt.
+    lv_obj_set_hidden(s_g_summary.value, true);
+    lv_obj_set_hidden(s_g_summary.unit, true);
+    lv_obj_set_hidden(s_g_summary.caption, true);
     lv_obj_set_style_arc_width(s_g_summary.arc, 22, LV_PART_INDICATOR);
 
     s_sum_center = make_label(tile, &ui_font_48, 0xffffff);
@@ -259,7 +290,6 @@ static void build_summary(lv_obj_t *tile)
     s_sum_sub = make_label(tile, &ui_font_28, 0x94a3b8);
     lv_obj_align(s_sum_sub, LV_ALIGN_CENTER, UI_X_OFFSET, -32);
 
-    // 2x2-Raster von Sekundaerwerten mit vergroessertem Padding und 28px-Werten
     static const int dx[4] = {-96, 96, -96, 96};
     static const int dy[4] = {18, 18, 86, 86};
     for (int i = 0; i < 4; i++) {
@@ -270,9 +300,6 @@ static void build_summary(lv_obj_t *tile)
 
 static void build_co2(lv_obj_t *tile)
 {
-    // Das Diagramm wird ZUERST erstellt, damit es im Hintergrund liegt: Es verlaeuft
-    // ueber das gesamte Display, Ring und Zahl werden darueber gezeichnet.
-    // Der Ring ueberdeckt die Kurve, sodass die Linie darunter durchzulaufen scheint.
     chart_create(&s_co2_chart, &s_co2_ser, tile, 430, 90, 0x38bdf8);
     lv_obj_align(s_co2_chart, LV_ALIGN_CENTER, UI_X_OFFSET, 108);
 
@@ -286,18 +313,13 @@ static void build_co2(lv_obj_t *tile)
     lv_obj_align(s_co2_level, LV_ALIGN_CENTER, UI_X_OFFSET, 48);
 }
 
-// Tuerkis: Die anderen Farben sind bereits belegt (CO2 blau, VOC violett, NOx hellblau, Laerm bernsteingelb).
 #define PM_COL 0x2dd4bf
 
 static void build_pm(lv_obj_t *tile)
 {
-    // Das Diagramm ZUERST im Hintergrund: Nur PM2.5, da dieser Wert die Seite dominiert
-    // und gesundheitlich am wichtigsten ist; vier fast identische Kurven waeren unuebersichtlich.
     chart_create(&s_pm_chart, &s_pm_ser, tile, 430, 90, PM_COL);
     lv_obj_align(s_pm_chart, LV_ALIGN_CENTER, UI_X_OFFSET, 108);
 
-    // Gleicher visueller Aufbau wie CO2: Ring und grosse Ziffer.
-    // PM2.5 steht im Fokus, die anderen drei Werte begleiten darunter.
     gauge_create(&s_g_pm, tile, RING_D, 22,
                  &ui_font_48, &ui_font_28);
     lv_obj_set_style_text_font(s_g_pm.caption, &ui_font_28, 0);
@@ -311,9 +333,6 @@ static void build_pm(lv_obj_t *tile)
     for (int i = 0; i < 3; i++) {
         mini_create(tile, &s_pm_name[i], &s_pm_val[i], dx[i], 76,
                     &ui_font_28);
-        // Die drei Zahlen liegen INNERHALB des Diagrammbands (+55..+145).
-        // Ein deckender schwarzer Hintergrund sorgt dafuer, dass die Kurve dahinter durchlaeuft
-        // und die Beschriftung lesbar bleibt.
         for (lv_obj_t *o = s_pm_name[i]; o; o = (o == s_pm_name[i]) ? s_pm_val[i] : NULL) {
             lv_obj_set_style_bg_color(o, col(0x000000), 0);
             lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
@@ -322,14 +341,11 @@ static void build_pm(lv_obj_t *tile)
     }
 }
 
-// Zentrale Farbdefinitionen: Diagrammlinie und Ringbeschriftung gehoeren zur selben Metrik.
 #define GAS_COL_VOC 0xa78bfa
 #define GAS_COL_NOX 0x38bdf8
 
 static void build_gas(lv_obj_t *tile)
 {
-    // Gleicher Aufbau wie CO2 und Klima: Diagramm ZUERST im Hintergrund im unteren Bereich (y~+100).
-    // VOC auf Primaerachse, NOx auf Sekundaerachse (gleiches Diagramm, getrennte Skalierung).
     chart_create(&s_gas_chart, &s_gas_ser_voc, tile, 430, 90, GAS_COL_VOC);
     s_gas_ser_nox = chart_add_secondary(s_gas_chart, GAS_COL_NOX);
     lv_obj_align(s_gas_chart, LV_ALIGN_CENTER, UI_X_OFFSET, 108);
@@ -338,7 +354,6 @@ static void build_gas(lv_obj_t *tile)
     lv_label_set_text(title, T(STR_PAGE_GASES));
     lv_obj_align(title, LV_ALIGN_CENTER, UI_X_OFFSET, -88);
 
-    // Zwei vergroesserte Ringe (188 px), nach links und rechts gespreizt (x = +-106)
     lv_obj_t *left = plain(tile);
     lv_obj_set_size(left, 196, 196);
     lv_obj_align(left, LV_ALIGN_CENTER, -106 + UI_X_OFFSET, 14);
@@ -356,8 +371,6 @@ static void build_gas(lv_obj_t *tile)
     lv_obj_t *hint = make_label(tile, &ui_font_22, 0x64748b);
     lv_label_set_text(hint, T(STR_GAS_HINT));
     lv_obj_align(hint, LV_ALIGN_CENTER, UI_X_OFFSET, 122);
-    // Deckender Hintergrund in Displayfarbe, damit die Diagrammlinie dahinter
-    // durchlaeuft und den Text nicht unleserlich macht.
     lv_obj_set_style_bg_color(hint, col(0x000000), 0);
     lv_obj_set_style_bg_opa(hint, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_hor(hint, 6, 0);
@@ -365,7 +378,6 @@ static void build_gas(lv_obj_t *tile)
 
 static void build_climate(lv_obj_t *tile)
 {
-    // Spaltenkoepfe in 28 px Kurvenfarbe, weiter nach aussen gesetzt (-116 / +116)
     lv_obj_t *lbl_temp = make_label(tile, &ui_font_28, 0xf59e0b);
     lv_label_set_text(lbl_temp, i18n_metric(AIR_TEMP));
     lv_obj_align(lbl_temp, LV_ALIGN_CENTER, -116 + UI_X_OFFSET, -72);
@@ -380,35 +392,28 @@ static void build_climate(lv_obj_t *tile)
     s_cl_hum = make_label(tile, &ui_font_48, 0x38bdf8);
     lv_obj_align(s_cl_hum, LV_ALIGN_CENTER, 116 + UI_X_OFFSET, -22);
 
-    // Ohne Ring kann diese Seite ein breites Diagramm nutzen. Beide Kurven teilen sich
-    // das Diagramm, nutzen aber getrennte vertikale Skalen (Primaer- und Sekundaerachse).
     chart_create(&s_cl_chart, &s_cl_ser, tile, 430, 110, 0xf59e0b);
     s_cl_ser_hum = chart_add_secondary(s_cl_chart, 0x38bdf8);
     lv_obj_align(s_cl_chart, LV_ALIGN_CENTER, UI_X_OFFSET, 86);
 }
 
 // ------------------------------------------------------------------ Status & Ruheansicht
-// Die neun Messgroessen im 3x3-Raster mit Gesamtbewertung oben.
-static void build_idle(lv_obj_t *scr)
+static void build_idle(lv_obj_t *parent)
 {
-    s_idle_panel = plain(scr);
+    s_idle_panel = plain(parent);
     lv_obj_set_size(s_idle_panel, SCR_W, SCR_H);
     lv_obj_center(s_idle_panel);
-    lv_obj_add_flag(s_idle_panel, LV_OBJ_FLAG_HIDDEN);
-    // Keine Beruehrungen abfangen: Geste muss durchgehen, um den Bildschirm aufzuwecken.
-    lv_obj_remove_flag(s_idle_panel, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_hidden(s_idle_panel, true);
+    lv_obj_set_clickable(s_idle_panel, false);
 
     s_idle_level = make_label(s_idle_panel, &ui_font_48, 0xffffff);
     lv_obj_align(s_idle_level, LV_ALIGN_CENTER, UI_X_OFFSET, -100);
 
-    // Laerm steht separat unter der Ampel und NICHT im Raster: Es gehoert nicht zur
-    // chemischen Luftqualitaet und fliesst nicht in die Gesamtbewertung ein.
     s_idle_noise_name = make_label(s_idle_panel, &ui_font_16, 0x64748b);
     lv_obj_align(s_idle_noise_name, LV_ALIGN_CENTER, -36 + UI_X_OFFSET, -62);
     s_idle_val[AIR_NOISE] = make_label(s_idle_panel, &ui_font_22, 0xffffff);
     lv_obj_align(s_idle_val[AIR_NOISE], LV_ALIGN_CENTER, 32 + UI_X_OFFSET, -62);
 
-    // IP-Adresse ganz unten ueber der Akkuanzeige: Nuetzlich fuer den Zugriff auf das Web-Panel.
     s_idle_ip = make_label(s_idle_panel, &ui_font_16, 0x475569);
     lv_obj_set_style_text_align(s_idle_ip, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(s_idle_ip, LV_ALIGN_CENTER, UI_X_OFFSET, 142);
@@ -420,7 +425,6 @@ static void build_idle(lv_obj_t *scr)
     };
     for (int i = 0; i < 9; i++) {
         const int dx = (i % 3 - 1) * 122 + UI_X_OFFSET;
-        // Zeilenabstand so gewaehlt, dass die unterste Zeile nicht mit der Akkuanzeige kollidiert
         const int dy = -36 + (i / 3) * 64;
         lv_obj_t *name = make_label(s_idle_panel, &ui_font_16, 0x64748b);
         lv_obj_set_style_text_align(name, LV_TEXT_ALIGN_CENTER, 0);
@@ -433,7 +437,6 @@ static void build_idle(lv_obj_t *scr)
     }
 }
 
-// Gleicher Aufbau wie CO2: Diagramm vollflaechig im Hintergrund, Ring darueber (in Bernstein).
 static void build_noise(lv_obj_t *tile)
 {
     chart_create(&s_noise_chart, &s_noise_ser, tile, 430, 90, 0xfacc15);
@@ -448,31 +451,28 @@ static void build_noise(lv_obj_t *tile)
     lv_obj_align(s_noise_level, LV_ALIGN_CENTER, UI_X_OFFSET, 48);
 }
 
-static void build_chrome(lv_obj_t *scr)
+static void build_chrome(lv_obj_t *parent)
 {
-    // Grosse Uhrzeit und Netzwerkstatus INNERHALB des Rings
-    s_status_time = make_label(scr, &ui_font_48, 0xe2e8f0);
+    s_status_time = make_label(parent, &ui_font_48, 0xe2e8f0);
     lv_obj_align(s_status_time, LV_ALIGN_CENTER, UI_X_OFFSET, -170);
 
-    s_status_net = make_label(scr, &ui_font_16, 0x475569);
+    s_status_net = make_label(parent, &ui_font_16, 0x475569);
     lv_obj_align(s_status_net, LV_ALIGN_CENTER, UI_X_OFFSET, -128);
 
-    // Die Akkuanzeige liegt unten im freien Bereich der Bogenoeffnung:
-    // Stoert keine Seite und ist sofort ablesbar.
-    s_status_bat = make_label(scr, &ui_font_16, 0x94a3b8);
+    s_status_bat = make_label(parent, &ui_font_16, 0x94a3b8);
     lv_obj_align(s_status_bat, LV_ALIGN_CENTER, UI_X_OFFSET, 156);
 
-    s_status_msg = make_label(scr, &ui_font_16, 0xfacc15);
+    s_status_msg = make_label(parent, &ui_font_16, 0xfacc15);
     lv_obj_align(s_status_msg, LV_ALIGN_BOTTOM_MID, UI_X_OFFSET, -52);
 
     for (int i = 0; i < UI_PAGE_COUNT; i++) {
-        s_dots[i] = lv_obj_create(scr);
+        s_dots[i] = lv_obj_create(parent);
         lv_obj_remove_style_all(s_dots[i]);
         lv_obj_set_size(s_dots[i], 7, 7);
         lv_obj_set_style_radius(s_dots[i], 4, 0);
         lv_obj_set_style_bg_opa(s_dots[i], LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(s_dots[i], col(0x334155), 0);
-        lv_obj_add_flag(s_dots[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(s_dots[i], true);
     }
 }
 
@@ -482,7 +482,7 @@ static void layout_dots(void)
     const int x0 = -(s_cols - 1) * gap / 2 + UI_X_OFFSET;
     for (int c = 0; c < s_cols; c++) {
         lv_obj_t *d = s_dots[c];
-        lv_obj_remove_flag(d, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(d, false);
         lv_obj_align(d, LV_ALIGN_BOTTOM_MID, x0 + c * gap, -28);
     }
 }
@@ -502,6 +502,7 @@ static void on_tile_change(lv_event_t *e)
         if (lv_obj_get_child(s_tv, c) == act) { s_cur_col = c; break; }
     }
     update_dots();
+    ui_wake();
 }
 
 static void on_activity(lv_event_t *e)
@@ -519,28 +520,37 @@ void ui_init(air_history_t *hist, const ui_config_t *cfg,
     s_set_brightness = set_brightness;
     air_sample_clear(&s_last);
 
-    ui_fonts_init(); // Kopien der Montserrat-Schriften mit deutschen Umlauten
+    ui_fonts_init();
 
     lv_obj_t *scr = lv_screen_active();
     lv_obj_set_style_bg_color(scr, col(0x000000), 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
     lv_obj_add_event_cb(scr, on_activity, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(scr, on_activity, LV_EVENT_CLICKED, NULL);
 
-    s_tv = lv_tileview_create(scr);
+    // Gemeinsamer Container fuer alle UI-Elemente, damit Pixel-Shift (Burn-in-Schutz)
+    // die gesamte Ansicht sauber um +-3 px verschieben kann.
+    s_root = plain(scr);
+    lv_obj_set_size(s_root, SCR_W, SCR_H);
+    lv_obj_set_pos(s_root, 0, 0);
+    lv_obj_set_event_bubble(s_root, true);
+
+    s_tv = lv_tileview_create(s_root);
     lv_obj_set_size(s_tv, SCR_W, SCR_H);
     lv_obj_set_style_bg_opa(s_tv, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_tv, 0, 0);
     lv_obj_set_scrollbar_mode(s_tv, LV_SCROLLBAR_MODE_OFF);
     lv_obj_add_event_cb(s_tv, on_tile_change, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(s_tv, on_activity, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(s_tv, on_activity, LV_EVENT_SCROLL_BEGIN, NULL);
 
-    // Nur aktivierte Seiten werden in ihrer natuerlichen Reihenfolge erzeugt.
-    // Eine Aenderung der Maske erfordert einen Neustart (Webserver startet beim Speichern neu).
     s_cols = 0;
     for (int p = 0; p < UI_PAGE_COUNT; p++) {
         s_page_col[p] = -1;
         if (!((s_cfg.pages_mask >> p) & 1)) continue;
         lv_obj_t *tile = lv_tileview_add_tile(s_tv, s_cols, 0, LV_DIR_HOR);
-        lv_obj_remove_flag(tile, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_scrollable(tile, false);
+        lv_obj_set_event_bubble(tile, true);
         switch (p) {
         case PAGE_SUMMARY: build_summary(tile); break;
         case PAGE_CO2:     build_co2(tile);     break;
@@ -554,19 +564,53 @@ void ui_init(air_history_t *hist, const ui_config_t *cfg,
         s_col_page[s_cols] = p;
         s_cols++;
     }
-    if (s_cols == 0) { // Leere Maske: mindestens die Uebersicht anzeigen
+    if (s_cols == 0) {
         lv_obj_t *tile = lv_tileview_add_tile(s_tv, 0, 0, LV_DIR_HOR);
+        lv_obj_set_event_bubble(tile, true);
         build_summary(tile);
         s_page_col[PAGE_SUMMARY] = 0;
         s_col_page[0] = PAGE_SUMMARY;
         s_cols = 1;
     }
 
-    build_idle(scr);
-    build_chrome(scr);
+    build_idle(s_root);
+    build_chrome(s_root);
     layout_dots();
     update_dots();
-    if (s_set_brightness) s_set_brightness(s_cfg.brightness);
+
+    // Software-Dimming-Overlay auf lv_layer_top() fuer stufenloses Smooth Fading.
+    s_dim_overlay = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(s_dim_overlay, SCR_W, SCR_H);
+    lv_obj_set_style_bg_color(s_dim_overlay, lv_color_black(), 0);
+    lv_obj_set_style_border_width(s_dim_overlay, 0, 0);
+    lv_obj_set_style_radius(s_dim_overlay, 0, 0);
+    lv_obj_set_clickable(s_dim_overlay, false);
+    lv_obj_set_style_bg_opa(s_dim_overlay, LV_OPA_TRANSP, 0);
+
+    apply_brightness_immediate(s_cfg.brightness);
+}
+
+void ui_apply_config(const ui_config_t *cfg)
+{
+    if (!cfg) return;
+    s_cfg.brightness = cfg->brightness;
+    s_cfg.night_brightness = cfg->night_brightness;
+    s_cfg.screen_timeout_s = cfg->screen_timeout_s;
+    s_cfg.chart_span_min = cfg->chart_span_min;
+    s_cfg.burnin_idle = cfg->burnin_idle;
+    s_cfg.burnin_active = cfg->burnin_active;
+
+    if (s_dimmed && !s_on_battery && s_cfg.screen_timeout_s == 0) {
+        ui_wake();
+    } else if (s_dimmed) {
+        fade_brightness(s_on_battery ? 0 : s_cfg.night_brightness, 0);
+    } else {
+        fade_brightness(s_cfg.brightness, 0);
+    }
+
+    const bool shift_en = (s_cur_brightness > 0) &&
+                          (s_dimmed ? s_cfg.burnin_idle : s_cfg.burnin_active);
+    if (!shift_en) burnin_reset();
 }
 
 void ui_update(const air_sample_t *s)
@@ -596,8 +640,6 @@ void ui_update(const air_sample_t *s)
             const air_metric_t drv = air_overall_driver(s);
             lv_obj_set_style_arc_color(s_g_summary.arc, col(air_level_color(lvl)),
                                        LV_PART_INDICATOR);
-            // Der Ring der Uebersicht misst nichts: Er dient als Farbbewertung (Ampel).
-            // Er wird vollstaendig gefuellt (nur leer, solange keine Daten vorliegen).
             lv_arc_set_value(s_g_summary.arc, lvl == AIR_LVL_UNKNOWN ? 0 : 1000);
             lv_label_set_text(s_sum_center, i18n_level(lvl));
             lv_obj_set_style_text_color(s_sum_center, col(air_level_color(lvl)), 0);
@@ -610,9 +652,7 @@ void ui_update(const air_sample_t *s)
                 lv_label_set_text(s_sum_sub, buf);
             }
             static const air_metric_t mini[4] = {AIR_CO2, AIR_PM25, AIR_TEMP, AIR_HUM};
-            // Abgekuerzte Beschriftungen, damit sie innerhalb des Rings nicht ueberstehen
             for (int i = 0; i < 4; i++) {
-                // Beschriftung + Einheit: Die Zahl steht separat darunter fuer maximale Groesse
                 const char *rot = (mini[i] == AIR_TEMP) ? T(STR_LBL_TEMP)
                                 : (mini[i] == AIR_HUM)  ? T(STR_LBL_HUM)
                                                         : i18n_metric(mini[i]);
@@ -708,7 +748,6 @@ void ui_set_status(const char *time_str, bool wifi, bool mqtt, const char *msg,
     if (bat_pct < 0) {
         lv_label_set_text(s_status_bat, "");
     } else {
-        // Die Akkusymbole stammen direkt aus den Schriften von LVGL (Symbols)
         const char *icono = charging      ? LV_SYMBOL_CHARGE
                           : bat_pct >= 80 ? LV_SYMBOL_BATTERY_FULL
                           : bat_pct >= 55 ? LV_SYMBOL_BATTERY_3
@@ -730,8 +769,6 @@ void ui_set_on_battery(bool on_battery)
 {
     if (on_battery == s_on_battery) return;
     s_on_battery = on_battery;
-    // Beim ANSTECKEN einschalten: Man tritt an das Geraet heran und moechte Werte sehen.
-    // Beim Abstecken NICHT aufwecken, um sofort Energie zu sparen.
     if (!on_battery) ui_wake();
 }
 
@@ -751,20 +788,26 @@ void ui_goto_page(int page)
     ui_wake();
 }
 
+void ui_set_live_brightness(uint8_t level)
+{
+    fade_brightness(level, 0);
+}
+
 void ui_wake(void)
 {
-    // Aktivitaet in LVGL registrieren: Bei manuellem Aufwecken wird der Inaktivitaetszaehler
-    // zurueckgesetzt, damit das Display nicht im naechsten Tick wieder abschaltet.
     lv_display_trigger_activity(NULL);
     s_idle_s = 0;
     if (s_idle_shown) {
         s_idle_shown = false;
-        lv_obj_add_flag(s_idle_panel, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(s_tv, LV_OBJ_FLAG_HIDDEN); // Kehrt zur vorherigen Seite zurueck
+        lv_obj_set_hidden(s_idle_panel, true);
+        lv_obj_set_hidden(s_tv, false);
     }
     if (s_dimmed) {
         s_dimmed = false;
-        if (s_set_brightness) s_set_brightness(s_cfg.brightness);
+        fade_brightness(s_cfg.brightness, FADE_WAKE_MS);
+    }
+    if (!s_cfg.burnin_active) {
+        burnin_reset();
     }
 }
 
@@ -776,13 +819,9 @@ void ui_set_ip(const char *ip)
 
 void ui_tick_1s(void)
 {
-    // Die Inaktivitaet wird von LVGL verwaltet:
-    // Der Klick-Event wird auf dem Screen-Objekt registriert.
     const uint32_t inactivo_ms = lv_display_get_inactive_time(NULL);
     s_idle_s = inactivo_ms / 1000;
 
-    // Abdunkeln bei Inaktivitaet (bei AMOLED spart Abschalten spuerbar Strom).
-    // Im Akkubetrieb schaltet das Display vollstaendig ab.
     const uint32_t timeout = s_on_battery
         ? (s_cfg.screen_timeout_s && s_cfg.screen_timeout_s < UI_BATTERY_TIMEOUT_S
                ? s_cfg.screen_timeout_s : UI_BATTERY_TIMEOUT_S)
@@ -790,17 +829,31 @@ void ui_tick_1s(void)
     const uint8_t dim_to = s_on_battery ? 0 : s_cfg.night_brightness;
 
     if (s_dimmed && inactivo_ms < 1500) {
-        ui_wake(); // Beruehrung erkannt: Aufwecken und vorherige Seite anzeigen
+        ui_wake();
     } else if (timeout && !s_dimmed && s_idle_s >= timeout) {
         s_dimmed = true;
-        if (s_set_brightness) s_set_brightness(dim_to);
-        // Im Akkubetrieb schaltet das Display ganz ab, daher kein Ruhebildschirm;
-        // am Netzteil wird gedimmt und die Uebersicht eingeblendet.
+        fade_brightness(dim_to, FADE_DIM_MS);
         if (!s_on_battery && s_idle_panel) {
             s_idle_shown = true;
-            lv_obj_add_flag(s_tv, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_remove_flag(s_idle_panel, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_hidden(s_tv, true);
+            lv_obj_set_hidden(s_idle_panel, false);
         }
     }
-    // Keine automatische Seitenrotation: Seiten werden manuell per Wischgeste gewechselt.
+
+    // AMOLED Burn-in-Schutz (Pixel-Shift +-3 px alle 60 s)
+    const bool shift_en = (s_cur_brightness > 0) &&
+                          (s_dimmed ? s_cfg.burnin_idle : s_cfg.burnin_active);
+    if (!shift_en) {
+        burnin_reset();
+    } else if (++s_burnin_s >= BURNIN_PERIOD_S) {
+        static const int8_t OFF[][2] = {
+            { 0,  0}, { 3,  0}, { 3,  3}, { 0,  3},
+            {-3,  3}, {-3,  0}, {-3, -3}, { 0, -3}, { 3, -3},
+        };
+        s_burnin_s = 0;
+        s_burnin_step = (s_burnin_step + 1) % (sizeof(OFF) / sizeof(OFF[0]));
+        if (s_root) {
+            lv_obj_set_pos(s_root, OFF[s_burnin_step][0], OFF[s_burnin_step][1]);
+        }
+    }
 }

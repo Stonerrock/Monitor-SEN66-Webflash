@@ -15,16 +15,15 @@
 static const char *TAG = "display";
 
 #define LCD_CMD_BRIGHTNESS 0x51 // write display brightness (MIPI DCS)
+#define LCD_CMD_WRCTRLD    0x53 // write CTRL display (BCTRL enable)
 
 static lv_display_t *s_disp;
 static i2c_master_bus_handle_t s_i2c_bus;
 static esp_lcd_panel_io_handle_t s_panel_io;
 static esp_lcd_panel_handle_t s_panel;
 static bool s_disp_on = true;
+static bool s_bctrl_init = false;
 
-// Los AMOLED QSPI (CO5300) exigen ventanas de volcado alineadas a 2 px; con
-// bordes impares el panel pinta basura (lineas verdes) en los limites del
-// area. Redondeamos toda area invalidada a inicio par / fin impar.
 static void round_area_cb(lv_event_t *e)
 {
     lv_area_t *a = lv_event_get_param(e);
@@ -34,10 +33,6 @@ static void round_area_cb(lv_event_t *e)
     a->y2 |= 1;
 }
 
-// La GRAM del panel es mayor que los 466 px visibles y las zonas que LVGL
-// nunca pinta muestran basura. set_gap no cubre todas las combinaciones con
-// rotacion: barremos toda la GRAM a negro una vez (en AMOLED negro = pixel
-// apagado, asi que no vuelve a verse).
 static void panel_clear_gram(esp_lcd_panel_handle_t panel)
 {
     const int gram = 480, stripe = 24;
@@ -47,7 +42,7 @@ static void panel_clear_gram(esp_lcd_panel_handle_t panel)
     for (int y = 0; y < gram; y += stripe) {
         esp_lcd_panel_draw_bitmap(panel, 0, y, gram, y + stripe, black);
     }
-    vTaskDelay(pdMS_TO_TICKS(100)); // las transferencias van por DMA en cola
+    vTaskDelay(pdMS_TO_TICKS(100));
     free(black);
 }
 
@@ -63,7 +58,7 @@ static esp_err_t panel_init(esp_lcd_panel_handle_t *out_panel)
 
     esp_lcd_panel_io_spi_config_t io_cfg =
         CO5300_PANEL_IO_QSPI_CONFIG(BOARD_LCD_PIN_CS, NULL, NULL);
-    io_cfg.pclk_hz = 80 * 1000 * 1000; // el macro trae 40; el panel aguanta 80
+    io_cfg.pclk_hz = 80 * 1000 * 1000;
     ESP_RETURN_ON_ERROR(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)BOARD_LCD_QSPI_HOST,
                                                  &io_cfg, &s_panel_io),
                         TAG, "panel io");
@@ -82,8 +77,6 @@ static esp_err_t panel_init(esp_lcd_panel_handle_t *out_panel)
 
     ESP_RETURN_ON_ERROR(esp_lcd_panel_reset(*out_panel), TAG, "reset");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_init(*out_panel), TAG, "init");
-    // La rotacion (MADCTL) la aplica esp_lvgl_port via disp_cfg.rotation;
-    // llamarla aqui no sirve, el port la sobreescribe al anadir el display.
     panel_clear_gram(*out_panel);
     ESP_RETURN_ON_ERROR(esp_lcd_panel_set_gap(*out_panel, 0, 0), TAG, "gap");
     ESP_RETURN_ON_ERROR(esp_lcd_panel_disp_on_off(*out_panel, true), TAG, "disp on");
@@ -104,8 +97,6 @@ static esp_err_t touch_init(esp_lcd_touch_handle_t *out_touch)
 
     esp_lcd_panel_io_handle_t tp_io;
     esp_lcd_panel_io_i2c_config_t tp_io_cfg = ESP_LCD_TOUCH_IO_I2C_CST9217_CONFIG();
-    // El macro no rellena la frecuencia y la API I2C nueva la exige (si no,
-    // bootloop). Ver la chuleta de la placa.
     tp_io_cfg.scl_speed_hz = 400000;
     ESP_RETURN_ON_ERROR(esp_lcd_new_panel_io_i2c(s_i2c_bus, &tp_io_cfg, &tp_io),
                         TAG, "touch io");
@@ -114,10 +105,8 @@ static esp_err_t touch_init(esp_lcd_touch_handle_t *out_touch)
         .x_max = BOARD_LCD_H_RES,
         .y_max = BOARD_LCD_V_RES,
         .rst_gpio_num = BOARD_TOUCH_PIN_RST,
-        .int_gpio_num = BOARD_TOUCH_PIN_INT, // sin INT, leer por I2C puede colgar ~1s
+        .int_gpio_num = BOARD_TOUCH_PIN_INT,
         .levels = { .reset = 0, .interrupt = 0 },
-        // Misma tabla de angulos que el panel, pero sobre
-        // BOARD_TOUCH_ROTATION, que ya incluye el desfase de montaje.
         .flags = {
 #if BOARD_TOUCH_ROTATION == 90
             .swap_xy = 1, .mirror_y = 1,
@@ -142,23 +131,13 @@ esp_err_t display_init(void)
     const lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
     ESP_RETURN_ON_ERROR(lvgl_port_init(&port_cfg), TAG, "lvgl port");
 
-    // El buffer de volcado tiene que estar en RAM interna con DMA: el driver
-    // SPI rechaza color desde PSRAM (probado: transmit failed + watchdog).
-    // Cuanto mas grande, menos trozos por frame y menos tearing, pero el
-    // mayor bloque contiguo libre depende de lo que haya arrancado antes y
-    // varia entre proyectos y entre revisiones de IDF (aqui ~144 KB, no los
-    // ~192 KB de Hamlet). Lo dimensionamos con lo que hay de verdad en vez
-    // de con un numero fijo, que es como se llego a un bootloop.
     const size_t largest =
         heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
-    // 56 KB de margen: con 144 KB contiguos salen 96 filas, que se vuelcan
-    // en los mismos 5 trozos por frame que 114, pero dejan 16 KB mas de heap
-    // interno para WiFi en modo estacion, MQTT y OTA.
     const size_t reserve = 56 * 1024;
     const size_t usable = largest > reserve ? largest - reserve : largest / 2;
     int rows = (int)(usable / (BOARD_LCD_H_RES * sizeof(uint16_t)));
-    if (rows > 185) rows = 185; // por encima no aporta: son 466 lineas
-    if (rows < 40) rows = 40;   // por debajo el refresco se nota a tirones
+    if (rows > 185) rows = 185;
+    if (rows < 40) rows = 40;
     ESP_LOGI(TAG, "bloque DMA interno libre %u KB -> buffer LVGL de %d filas (%u KB)",
              (unsigned)(largest / 1024), rows,
              (unsigned)(rows * BOARD_LCD_H_RES * 2 / 1024));
@@ -182,7 +161,7 @@ esp_err_t display_init(void)
         },
         .flags = {
             .buff_dma = true,
-            .swap_bytes = true, // el QSPI AMOLED espera RGB565 big-endian
+            .swap_bytes = true,
         },
     };
     s_panel = panel;
@@ -207,15 +186,11 @@ void display_set_brightness(uint8_t level)
 {
     if (!s_panel_io) return;
 
-    // En este AMOLED el brillo 0 es el MINIMO, no apagado: el panel sigue
-    // emitiendo y de noche se ve perfectamente. Para apagarlo de verdad hay
-    // que mandarle el comando de display off, que en AMOLED apaga los pixeles
-    // y es donde esta el ahorro. La GRAM se conserva, asi que al volver
-    // aparece la misma imagen sin repintar.
     if (level == 0) {
         if (s_disp_on && s_panel) {
             esp_lcd_panel_disp_on_off(s_panel, false);
             s_disp_on = false;
+            s_bctrl_init = false;
         }
         return;
     }
@@ -224,5 +199,11 @@ void display_set_brightness(uint8_t level)
         esp_lcd_panel_disp_on_off(s_panel, true);
         s_disp_on = true;
     }
+
+    if (!s_bctrl_init) {
+        esp_lcd_panel_io_tx_param(s_panel_io, LCD_CMD_WRCTRLD, (uint8_t[]){0x20}, 1);
+        s_bctrl_init = true;
+    }
+
     esp_lcd_panel_io_tx_param(s_panel_io, LCD_CMD_BRIGHTNESS, (uint8_t[]){level}, 1);
 }

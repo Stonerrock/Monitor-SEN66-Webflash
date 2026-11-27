@@ -70,7 +70,7 @@ dependencies:
   idf:
     source:
       type: idf
-    version: 6.1.0
+    version: 5.5.2
   lvgl/lvgl:
     component_hash: 7d82410747bbfb319531449749e940f440f8414f041f9eaba13f0d1dd7f58cdd
     dependencies:
@@ -126,4 +126,4 @@ direct_dependencies:
 - waveshare/esp_lcd_touch_cst9217
 manifest_hash: 1c15f4c5cea2ed25bcceedb5dbf319ccee65fa5a21e532aae0c625a74736da97
 target: esp32s3
-version: 3.0.0
+version: 2.0.0
