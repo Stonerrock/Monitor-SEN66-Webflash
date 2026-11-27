@@ -5,11 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Monitor SEN66 – Web Flasher</title>
   <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; max-width: 650px; }
+    .box { border: 1px solid #ccc; border-radius: 8px; padding: 1.2rem; margin-bottom: 1.5rem; }
+    h2 { margin-top: 0; font-size: 1.2rem; }
+  </style>
 </head>
-<body style="font-family: sans-serif; padding: 2rem;">
-  <h1>Monitor SEN66 – Firmware installieren</h1>
+<body>
+  <h1>Monitor SEN66 – Web Flasher</h1>
   <p>Aktuelle Version auf dem Server: <strong id="fw-version">wird geladen...</strong></p>
-  <esp-web-install-button manifest="./manifest.json"></esp-web-install-button>
+
+  <div class="box">
+    <h2>1. Update (WLAN &amp; Einstellungen behalten)</h2>
+    <p>Für Geräte, auf denen bereits eine Version dieses SEN66-Monitors läuft.</p>
+    <esp-web-install-button manifest="./manifest-update.json"></esp-web-install-button>
+  </div>
+
+  <div class="box">
+    <h2>2. Neuinstallation (Löscht alle Daten!)</h2>
+    <p>Für fabrikneue ESP32-S3 oder Geräte mit anderer Firmware.</p>
+    <esp-web-install-button manifest="./manifest.json"></esp-web-install-button>
+  </div>
 
   <script>
     fetch('./manifest.json?t=' + Date.now())
