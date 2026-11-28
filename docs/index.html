@@ -3,21 +3,66 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Monitor SEN66 – Web Flasher</title>
+  <title>Monitor SEN66 – Firmware &amp; Web-Flasher</title>
   <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
   <style>
-    body { font-family: sans-serif; padding: 2rem; max-width: 650px; }
-    .box { border: 1px solid #ccc; border-radius: 8px; padding: 1.2rem; margin-bottom: 1.5rem; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 2rem 1rem;
+      max-width: 660px;
+      margin: 0 auto;
+      line-height: 1.55;
+      color: #1e293b;
+      background: #f8fafc;
+    }
+    h1 { margin-top: 0; font-size: 1.7rem; }
+    h2 { margin-top: 0; font-size: 1.2rem; }
+    .version {
+      margin-bottom: 1.5rem;
+      color: #475569;
+    }
+    .box {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      padding: 1.3rem;
+      margin-bottom: 1.4rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+    .btn {
+      display: inline-block;
+      margin-top: 0.4rem;
+      padding: 0.7rem 1.2rem;
+      border-radius: 8px;
+      background: #2563eb;
+      color: #ffffff;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .btn:hover { background: #1d4ed8; }
+    .hint {
+      font-size: 0.9rem;
+      color: #475569;
+      margin-top: 0.6rem;
+    }
   </style>
 </head>
 <body>
-  <h1>Monitor SEN66 – Web Flasher</h1>
-  <p>Aktuelle Version auf dem Server: <strong id="fw-version">wird geladen...</strong></p>
+  <h1>Monitor SEN66 – Firmware</h1>
+  <p class="version">Aktuelle Version auf dem Server: <strong id="fw-version">wird geladen...</strong></p>
 
   <div class="box">
-    <h2>Firmware installieren</h2>
-    <p><strong>Hinweis für Updates:</strong> Bei der Installation über USB werden alle Gerätedaten zurückgesetzt. Bitte speichere vorab deine Konfiguration im Webinterface des Monitors als JSON-Datei und spiele sie danach wieder ein.</p>
+    <h2>1. Update über WLAN (empfohlen – behält alle Daten)</h2>
+    <p>Lade die aktuelle Firmware-Datei herunter und spiele sie direkt im Webinterface deines Monitors unter <strong>Wartung &rarr; Firmware aktualisieren (.bin)</strong> ein. WLAN, MQTT und alle Einstellungen bleiben dabei erhalten.</p>
+    <a class="btn" href="./monitor_sen66.bin" download="monitor_sen66.bin">monitor_sen66.bin herunterladen</a>
+  </div>
+
+  <div class="box">
+    <h2>2. Neuinstallation über USB (löscht alle Daten)</h2>
+    <p>Für neue Geräte oder eine komplette Neueinrichtung über Chrome/Edge per USB-Kabel.</p>
     <esp-web-install-button manifest="./manifest.json"></esp-web-install-button>
+    <p class="hint"><strong>Tipp:</strong> Falls das Gerät bereits eingerichtet ist, lade vorab im Webinterface unter <em>Sicherung</em> deine Konfiguration <em>Mit Passwörtern</em> herunter.</p>
   </div>
 
   <script>

@@ -740,8 +740,8 @@ void ui_set_status(const char *time_str, bool wifi, bool mqtt, const char *msg,
              (wifi && mqtt) ? " + " : "",
              (wifi && mqtt) ? "mqtt" : "");
     lv_label_set_text(s_status_net, net);
-    lv_obj_set_style_text_color(s_status_net, col(wifi ? (mqtt ? 0x22c55e : 0x94a3b8)
-                                                      : 0x64748b), 0);
+    // Sobald WLAN verbunden ist, leuchtet der angezeigte Status ("wifi" oder "wifi + mqtt") gruen
+    lv_obj_set_style_text_color(s_status_net, col(wifi ? 0x22c55e : 0x64748b), 0);
 
     lv_label_set_text(s_status_msg, msg ? msg : "");
 
