@@ -8,7 +8,6 @@
   <style>
     body { font-family: sans-serif; padding: 2rem; max-width: 650px; }
     .box { border: 1px solid #ccc; border-radius: 8px; padding: 1.2rem; margin-bottom: 1.5rem; }
-    h2 { margin-top: 0; font-size: 1.2rem; }
   </style>
 </head>
 <body>
@@ -16,15 +15,8 @@
   <p>Aktuelle Version auf dem Server: <strong id="fw-version">wird geladen...</strong></p>
 
   <div class="box">
-    <h2>1. Update (WLAN &amp; Einstellungen behalten)</h2>
-    <p>Für Geräte, auf denen bereits eine Version dieses SEN66-Monitors läuft.</p>
-    <esp-web-install-button manifest="./manifest-update.json"></esp-web-install-button>
-  </div>
-
-
-  <div class="box">
-    <h2>2. Neuinstallation (Löscht alle Daten!)</h2>
-    <p>Für fabrikneue ESP32-S3 oder Geräte mit anderer Firmware.</p>
+    <h2>Firmware installieren</h2>
+    <p><strong>Hinweis für Updates:</strong> Bei der Installation über USB werden alle Gerätedaten zurückgesetzt. Bitte speichere vorab deine Konfiguration im Webinterface des Monitors als JSON-Datei und spiele sie danach wieder ein.</p>
     <esp-web-install-button manifest="./manifest.json"></esp-web-install-button>
   </div>
 
